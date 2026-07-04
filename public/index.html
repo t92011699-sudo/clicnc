@@ -333,8 +333,10 @@
     </div>
 
     <script>
-        // API Base URL
-        const API_URL = 'http://localhost:3000/api';
+        // ✅ API_URL متغير - يشتغل في Localhost و Vercel
+        const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3000/api'
+            : '/api';
 
         // State
         let selectedDepartmentId = null;

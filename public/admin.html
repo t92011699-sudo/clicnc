@@ -626,10 +626,11 @@
     </div>
 
     <script>
-        // ============================================
-        // Configuration
-        // ============================================
-        const API_URL = 'http://localhost:3000/api';
+        // ✅ API_URL متغير - يشتغل في Localhost و Vercel
+        const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3000/api'
+            : '/api';
+
         let token = null;
         let user = null;
 
@@ -716,15 +717,10 @@
         // 4. Tab Switcher
         // ============================================
         function switchTab(tab) {
-            // Update tabs
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelector(`.tab[onclick="switchTab('${tab}')"]`).classList.add('active');
-
-            // Update content
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             document.getElementById(`tab-${tab}`).classList.add('active');
-
-            // Load data if needed
             if (tab === 'bookings') loadBookings();
             if (tab === 'appointments') loadAppointments();
         }
@@ -733,7 +729,6 @@
         // 5. Load Dashboard
         // ============================================
         async function loadDashboard() {
-            // Show user info
             document.getElementById('userName').textContent = user.name;
             const roleBadge = document.getElementById('userRole');
             if (user.is_super_admin) {
@@ -746,7 +741,6 @@
                 roleBadge.className = 'badge';
             }
 
-            // Get department name
             if (user.department_id) {
                 try {
                     const res = await fetch(`${API_URL}/departments`);
@@ -758,13 +752,12 @@
                 } catch (e) { }
             }
 
-            // Load data
             loadBookings();
             loadAppointments();
         }
 
         // ============================================
-        // 6. Load Bookings (خاصة بالدكتور فقط)
+        // 6. Load Bookings
         // ============================================
         async function loadBookings() {
             const container = document.getElementById('bookingsContainer');
@@ -778,7 +771,8 @@
                 const data = await res.json();
 
                 if (!data.success || data.bookings.length === 0) {
-                    container.innerHTML = '<p style="text-align: center; color: #718096; padding: 40px;">📭 لا توجد حجوزات حالياً</p>';
+                    container.innerHTML =
+                        '<p style="text-align: center; color: #718096; padding: 40px;">📭 لا توجد حجوزات حالياً</p>';
                     document.getElementById('totalBookings').textContent = '0';
                     document.getElementById('todayBookings').textContent = '0';
                     return;
@@ -787,7 +781,6 @@
                 const bookings = data.bookings;
                 document.getElementById('totalBookings').textContent = bookings.length;
 
-                // Count today's bookings
                 const today = new Date().toDateString();
                 const todayCount = bookings.filter(b => {
                     const d = new Date(b.booking_date);
@@ -795,44 +788,43 @@
                 }).length;
                 document.getElementById('todayBookings').textContent = todayCount;
 
-                // Build table
                 container.innerHTML = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>المريض</th>
-                            <th>التلفون</th>
-                            <th>السن</th>
-                            <th>اليوم</th>
-                            <th>الوقت</th>
-                            <th>الحالة</th>
-                            <th>تاريخ الحجز</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${bookings.map((b, i) => `
-                            <tr>
-                                <td>${i + 1}</td>
-                                <td><strong>${b.patient_name}</strong></td>
-                                <td>${b.patient_phone}</td>
-                                <td>${b.patient_age}</td>
-                                <td>${b.appointment?.day_of_week || '-'}</td>
-                                <td>${b.appointment?.time || '-'}</td>
-                                <td class="status-${b.status}">${b.status === 'confirmed' ? '✅ مؤكد' : '❌ ملغي'}</td>
-                                <td>${new Date(b.booking_date).toLocaleDateString('ar-EG')}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>المريض</th>
+                                    <th>التلفون</th>
+                                    <th>السن</th>
+                                    <th>اليوم</th>
+                                    <th>الوقت</th>
+                                    <th>الحالة</th>
+                                    <th>تاريخ الحجز</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${bookings.map((b, i) => `
+                                        <tr>
+                                            <td>${i + 1}</td>
+                                            <td><strong>${b.patient_name}</strong></td>
+                                            <td>${b.patient_phone}</td>
+                                            <td>${b.patient_age}</td>
+                                            <td>${b.appointment?.day_of_week || '-'}</td>
+                                            <td>${b.appointment?.time || '-'}</td>
+                                            <td class="status-${b.status}">${b.status === 'confirmed' ? '✅ مؤكد' : '❌ ملغي'}</td>
+                                            <td>${new Date(b.booking_date).toLocaleDateString('ar-EG')}</td>
+                                        </tr>
+                                    `).join('')}
+                            </tbody>
+                        </table>
+                    `;
             } catch (error) {
                 container.innerHTML = `<p style="color: #e53e3e;">❌ خطأ: ${error.message}</p>`;
             }
         }
 
         // ============================================
-        // 7. Load Appointments (خاصة بالدكتور فقط)
+        // 7. Load Appointments
         // ============================================
         async function loadAppointments() {
             const container = document.getElementById('appointmentsContainer');
@@ -846,14 +838,14 @@
                 const data = await res.json();
 
                 if (!data.success || data.appointments.length === 0) {
-                    container.innerHTML = '<p style="text-align: center; color: #718096; padding: 40px;">📅 لا توجد مواعيد حالياً</p>';
+                    container.innerHTML =
+                        '<p style="text-align: center; color: #718096; padding: 40px;">📅 لا توجد مواعيد حالياً</p>';
                     document.getElementById('totalAppointments').textContent = '0';
                     return;
                 }
 
                 document.getElementById('totalAppointments').textContent = data.appointments.length;
 
-                // Group by day
                 const grouped = {};
                 data.appointments.forEach(app => {
                     if (!grouped[app.day_of_week]) grouped[app.day_of_week] = [];
@@ -879,20 +871,20 @@
                         const available = app.available_slots || (app.max_bookings - booked);
                         const isAvailable = available > 0;
                         html += `
-                        <div class="card">
-                            <h4>🕐 ${app.time}</h4>
-                            <div class="sub">السعة: ${app.max_bookings} مرضى</div>
-                            <div class="sub">المتبقي: ${available} من ${app.max_bookings}</div>
-                            <span class="status-badge ${isAvailable ? 'available' : 'full'}">
-                                ${isAvailable ? '✅ متاح' : '❌ مكتمل'}
-                            </span>
-                            <br>
-                            <button onclick="deleteAppointment('${app.id}')" 
-                                class="btn btn-danger btn-sm" style="margin-top: 10px;">
-                                🗑️ حذف
-                            </button>
-                        </div>
-                    `;
+                                <div class="card">
+                                    <h4>🕐 ${app.time}</h4>
+                                    <div class="sub">السعة: ${app.max_bookings} مرضى</div>
+                                    <div class="sub">المتبقي: ${available} من ${app.max_bookings}</div>
+                                    <span class="status-badge ${isAvailable ? 'available' : 'full'}">
+                                        ${isAvailable ? '✅ متاح' : '❌ مكتمل'}
+                                    </span>
+                                    <br>
+                                    <button onclick="deleteAppointment('${app.id}')" 
+                                        class="btn btn-danger btn-sm" style="margin-top: 10px;">
+                                        🗑️ حذف
+                                    </button>
+                                </div>
+                            `;
                     });
                     html += `</div>`;
                 }
@@ -904,7 +896,7 @@
         }
 
         // ============================================
-        // 8. Add Appointment (للدكتور فقط)
+        // 8. Add Appointment
         // ============================================
         document.getElementById('addAppointmentForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -948,7 +940,7 @@
         });
 
         // ============================================
-        // 9. Delete Appointment (للدكتور فقط)
+        // 9. Delete Appointment
         // ============================================
         async function deleteAppointment(id) {
             if (!confirm('⚠️ هل أنت متأكد من حذف هذا الموعد؟')) return;
@@ -992,41 +984,41 @@
                 }
 
                 container.innerHTML = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>الاسم</th>
-                            <th>الإيميل</th>
-                            <th>القسم</th>
-                            <th>الحالة</th>
-                            <th>الإجراءات</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.doctors.map(d => `
-                            <tr>
-                                <td><strong>${d.name}</strong></td>
-                                <td>${d.email}</td>
-                                <td>${d.department?.name || '-'}</td>
-                                <td class="status-${d.is_active ? 'confirmed' : 'cancelled'}">
-                                    ${d.is_active ? '✅ نشط' : '❌ معطل'}
-                                </td>
-                                <td>
-                                    <button onclick="toggleDoctor('${d.id}', ${!d.is_active})" 
-                                        class="btn btn-sm ${d.is_active ? 'btn-warning' : 'btn-success'}"
-                                        style="margin-left: 5px;">
-                                        ${d.is_active ? 'تعطيل' : 'تفعيل'}
-                                    </button>
-                                    <button onclick="deleteDoctor('${d.id}')" 
-                                        class="btn btn-sm btn-danger">
-                                        حذف
-                                    </button>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>الاسم</th>
+                                    <th>الإيميل</th>
+                                    <th>القسم</th>
+                                    <th>الحالة</th>
+                                    <th>الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.doctors.map(d => `
+                                        <tr>
+                                            <td><strong>${d.name}</strong></td>
+                                            <td>${d.email}</td>
+                                            <td>${d.department?.name || '-'}</td>
+                                            <td class="status-${d.is_active ? 'confirmed' : 'cancelled'}">
+                                                ${d.is_active ? '✅ نشط' : '❌ معطل'}
+                                            </td>
+                                            <td>
+                                                <button onclick="toggleDoctor('${d.id}', ${!d.is_active})" 
+                                                    class="btn btn-sm ${d.is_active ? 'btn-warning' : 'btn-success'}"
+                                                    style="margin-left: 5px;">
+                                                    ${d.is_active ? 'تعطيل' : 'تفعيل'}
+                                                </button>
+                                                <button onclick="deleteDoctor('${d.id}')" 
+                                                    class="btn btn-sm btn-danger">
+                                                    حذف
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                            </tbody>
+                        </table>
+                    `;
             } catch (error) {
                 container.innerHTML = `<p style="color: #e53e3e;">❌ خطأ: ${error.message}</p>`;
             }
