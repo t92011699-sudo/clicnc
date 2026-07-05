@@ -3,7 +3,7 @@ const router = express.Router();
 const { supabase, supabaseAdmin } = require('../config/supabase');
 const { authenticate } = require('../middleware/auth');
 
-// 📝 حجز موعد (بدون توكن)
+// 📝 حجز موعد
 router.post('/', async (req, res) => {
     try {
         const { time_slot_id, booking_date, patient_name, patient_phone, patient_age, department_id } = req.body;
@@ -117,69 +117,8 @@ router.post('/', async (req, res) => {
     }
 });
 
-// 📝 جلب الحجوزات (بدون توكن - للجميع)
-router.get('/', async (req, res) => {
-    try {
-        const { date, dept_id, doctor_id, search, status } = req.query;
-
-        let query = supabase
-            .from('bookings')
-            .select(`
-                *,
-                time_slot:time_slots(
-                    start_time,
-                    end_time,
-                    day_of_week,
-                    max_bookings,
-                    doctor:doctors(id, name, title)
-                ),
-                department:departments(id, name)
-            `);
-
-        // ✅ فلترة بالتاريخ
-        if (date) {
-            query = query.eq('booking_date', date);
-        }
-
-        // ✅ فلترة بالقسم
-        if (dept_id) {
-            query = query.eq('department_id', dept_id);
-        }
-
-        // ✅ فلترة بالدكتور
-        if (doctor_id) {
-            query = query.eq('time_slot.doctor_id', doctor_id);
-        }
-
-        // ✅ فلترة بالحالة
-        if (status) {
-            query = query.eq('status', status);
-        }
-
-        // ✅ بحث بالاسم
-        if (search) {
-            query = query.ilike('patient_name', `%${search}%`);
-        }
-
-        const { data, error } = await query.order('booking_date', { ascending: false });
-
-        if (error) throw error;
-
-        res.json({
-            success: true,
-            bookings: data || []
-        });
-    } catch (error) {
-        console.error('❌ خطأ في جلب الحجوزات:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message 
-        });
-    }
-});
-
-// 📝 جلب الحجوزات (مع توكن - للسوبر أدمن)
-router.get('/admin', authenticate, async (req, res) => {
+// 📝 جلب كل الحجوزات (للسوبر أدمن)
+router.get('/', authenticate, async (req, res) => {
     try {
         const { date, dept_id, doctor_id, search, status } = req.query;
 
