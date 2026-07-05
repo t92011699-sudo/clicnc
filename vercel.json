@@ -1,51 +1,51 @@
- {
-    "version": 2,
-    "builds": [
-        {
-            "src": "backend/api/*.js",
-            "use": "@vercel/node"
-        }
-    ],
-    "routes": [
-        {
-            "src": "/api/departments",
-            "dest": "/backend/api/departments.js"
-        },
-        {
-            "src": "/api/departments/(.*)",
-            "dest": "/backend/api/departments.js"
-        },
-        {
-            "src": "/api/doctors",
-            "dest": "/backend/api/doctors.js"
-        },
-        {
-            "src": "/api/doctors/(.*)",
-            "dest": "/backend/api/doctors.js"
-        },
-        {
-            "src": "/api/timeslots",
-            "dest": "/backend/api/timeslots.js"
-        },
-        {
-            "src": "/api/timeslots/(.*)",
-            "dest": "/backend/api/timeslots.js"
-        },
-        {
-            "src": "/api/bookings",
-            "dest": "/backend/api/bookings.js"
-        },
-        {
-            "src": "/api/bookings/(.*)",
-            "dest": "/backend/api/bookings.js"
-        },
-        {
-            "src": "/api/admin",
-            "dest": "/backend/api/admin.js"
-        },
-        {
-            "src": "/api/admin/(.*)",
-            "dest": "/backend/api/admin.js"
-        }
-    ]
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "apis/*.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/departments",
+      "dest": "/apis/departments.js"
+    },
+    {
+      "src": "/api/departments/(.*)",
+      "dest": "/apis/departments.js"
+    },
+    {
+      "src": "/api/doctors",
+      "dest": "/apis/doctors.js"
+    },
+    {
+      "src": "/api/doctors/(.*)",
+      "dest": "/apis/doctors.js"
+    },
+    {
+      "src": "/api/timeslots",
+      "dest": "/apis/timeslots.js"
+    },
+    {
+      "src": "/api/timeslots/(.*)",
+      "dest": "/apis/timeslots.js"
+    },
+    {
+      "src": "/api/bookings",
+      "dest": "/apis/bookings.js"
+    },
+    {
+      "src": "/api/bookings/(.*)",
+      "dest": "/apis/bookings.js"
+    },
+    {
+      "src": "/api/admin",
+      "dest": "/apis/admin.js"
+    },
+    {
+      "src": "/api/admin/(.*)",
+      "dest": "/apis/admin.js"
+    }
+  ]
 }
