@@ -139,7 +139,7 @@ router.delete('/departments/:id', authenticate, isSuperAdmin, async (req, res) =
 // 👑 إدارة الدكاترة (سوبر أدمن فقط)
 // ============================================
 
-// 1. إضافة دكتور جديد
+// 1. إضافة دكتور جديد (مع التحقق من القسم)
 router.post('/doctors', authenticate, isSuperAdmin, async (req, res) => {
     try {
         const { department_id, gender } = req.body;
@@ -152,7 +152,7 @@ router.post('/doctors', authenticate, isSuperAdmin, async (req, res) => {
             return res.status(400).json({ error: '❌ القسم مطلوب' });
         }
 
-        // التحقق من وجود القسم
+        // ✅ التحقق من وجود القسم
         const { data: department, error: deptError } = await supabaseAdmin
             .from('departments')
             .select('id, name')
@@ -164,15 +164,17 @@ router.post('/doctors', authenticate, isSuperAdmin, async (req, res) => {
             return res.status(404).json({ error: '❌ القسم غير موجود' });
         }
 
+        // ✅ تحديد الاسم حسب الجنس
         const title = gender === 'female' ? 'دكتورة' : 'دكتور';
 
+        // ✅ إضافة الدكتور في القسم المحدد
         const { data: doctor, error } = await supabaseAdmin
             .from('doctors')
             .insert({
                 name: title,
                 title: title,
-                department_id,
                 gender: gender || 'male',
+                department_id: department_id,
                 is_super_admin: false,
                 is_active: true,
                 email: null,
@@ -198,7 +200,7 @@ router.post('/doctors', authenticate, isSuperAdmin, async (req, res) => {
 
         res.status(201).json({
             success: true,
-            message: `✅ تم إضافة ${title} بنجاح`,
+            message: `✅ تم إضافة ${title} في قسم ${department.name} بنجاح`,
             doctor
         });
     } catch (error) {
@@ -393,11 +395,47 @@ router.post('/time-slots', authenticate, isSuperAdmin, async (req, res) => {
     }
 });
 
-// 2. جلب كل فترات دكتور معين (مرتبة حسب الأيام)
+// 2. جلب فترات دكتور معين (مع إمكانية التحديد بالتاريخ)
 router.get('/time-slots/doctor/:doctorId', authenticate, isSuperAdmin, async (req, res) => {
     try {
         const { doctorId } = req.params;
+        const { date } = req.query;
 
+        console.log('📅 جلب فترات الدكتور:', doctorId);
+        console.log('📅 التاريخ:', date);
+
+        // ✅ لو في تاريخ محدد، جلب الفترات لهذا اليوم فقط
+        if (date) {
+            const dateObj = new Date(date + 'T00:00:00');
+            const dayOfWeek = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+
+            const { data, error } = await supabaseAdmin
+                .from('time_slots')
+                .select(`
+                    *,
+                    bookings:bookings(count)
+                `)
+                .eq('doctor_id', doctorId)
+                .eq('day_of_week', dayOfWeek)
+                .order('start_time');
+
+            if (error) throw error;
+
+            const slots = data.map(slot => ({
+                ...slot,
+                booked_count: slot.bookings[0]?.count || 0,
+                available_slots: slot.max_bookings - (slot.bookings[0]?.count || 0),
+                is_available: (slot.max_bookings - (slot.bookings[0]?.count || 0)) > 0
+            }));
+
+            return res.json({
+                success: true,
+                time_slots: slots,
+                day_of_week: dayOfWeek
+            });
+        }
+
+        // ✅ لو مفيش تاريخ، جلب كل الفترات مجمعة حسب اليوم
         const { data, error } = await supabaseAdmin
             .from('time_slots')
             .select(`
