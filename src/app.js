@@ -18,7 +18,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/departments', require('./routes/departments'));
 app.use('/api/appointments', require('./routes/appointments'));
-app.use('/api/bookings', require('./routes/bookings')); // ✅ موجود
+app.use('/api/bookings', require('./routes/bookings'));
 
 // ✅ Route مباشر للـ available-slots
 app.get('/api/available-slots', async (req, res) => {
@@ -84,7 +84,6 @@ app.get('/api/calendar', async (req, res) => {
         const { year, month } = req.query;
         const { supabase } = require('./config/supabase');
 
-        // جلب الحجوزات في الشهر
         const startDate = `${year}-${month.padStart(2, '0')}-01`;
         const endDate = `${year}-${month.padStart(2, '0')}-31`;
 
@@ -96,7 +95,6 @@ app.get('/api/calendar', async (req, res) => {
 
         if (error) throw error;
 
-        // تجميع الحجوزات حسب اليوم
         const bookingsByDate = {};
         data.forEach(b => {
             if (!bookingsByDate[b.booking_date]) {
@@ -105,7 +103,6 @@ app.get('/api/calendar', async (req, res) => {
             bookingsByDate[b.booking_date]++;
         });
 
-        // إنشاء أيام الشهر
         const daysInMonth = new Date(year, month, 0).getDate();
         const calendar = [];
         for (let i = 1; i <= daysInMonth; i++) {
@@ -138,30 +135,25 @@ app.get('/api/stats', async (req, res) => {
     try {
         const { supabase } = require('./config/supabase');
 
-        // عدد الأقسام
         const { count: deptCount } = await supabase
             .from('departments')
             .select('*', { count: 'exact', head: true });
 
-        // عدد الدكاترة
         const { count: doctorCount } = await supabase
             .from('doctors')
             .select('*', { count: 'exact', head: true })
             .eq('is_super_admin', false);
 
-        // عدد الحجوزات
         const { count: bookingCount } = await supabase
             .from('bookings')
             .select('*', { count: 'exact', head: true });
 
-        // حجوزات اليوم
         const today = new Date().toISOString().split('T')[0];
         const { count: todayBookings } = await supabase
             .from('bookings')
             .select('*', { count: 'exact', head: true })
             .eq('booking_date', today);
 
-        // الفترات المتاحة
         const { count: availableSlots } = await supabase
             .from('time_slots')
             .select('*', { count: 'exact', head: true })

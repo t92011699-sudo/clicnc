@@ -144,17 +144,23 @@ router.post('/doctors', authenticate, isSuperAdmin, async (req, res) => {
     try {
         const { department_id, gender } = req.body;
 
+        console.log('📝 إضافة دكتور:');
+        console.log('   القسم:', department_id);
+        console.log('   الجنس:', gender);
+
         if (!department_id) {
             return res.status(400).json({ error: '❌ القسم مطلوب' });
         }
 
-        const { data: department } = await supabaseAdmin
+        // التحقق من وجود القسم
+        const { data: department, error: deptError } = await supabaseAdmin
             .from('departments')
-            .select('id')
+            .select('id, name')
             .eq('id', department_id)
             .single();
 
-        if (!department) {
+        if (deptError || !department) {
+            console.error('❌ القسم غير موجود:', deptError);
             return res.status(404).json({ error: '❌ القسم غير موجود' });
         }
 
@@ -172,10 +178,23 @@ router.post('/doctors', authenticate, isSuperAdmin, async (req, res) => {
                 email: null,
                 password_hash: null
             })
-            .select()
+            .select(`
+                id,
+                name,
+                title,
+                gender,
+                department_id,
+                is_active,
+                created_at
+            `)
             .single();
 
-        if (error) throw error;
+        if (error) {
+            console.error('❌ خطأ في إضافة الدكتور:', error);
+            return res.status(500).json({ error: error.message });
+        }
+
+        console.log('✅ تم إضافة الدكتور:', doctor);
 
         res.status(201).json({
             success: true,
@@ -183,7 +202,7 @@ router.post('/doctors', authenticate, isSuperAdmin, async (req, res) => {
             doctor
         });
     } catch (error) {
-        console.error('Add doctor error:', error);
+        console.error('❌ خطأ في إضافة الدكتور:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -191,25 +210,42 @@ router.post('/doctors', authenticate, isSuperAdmin, async (req, res) => {
 // 2. جلب كل الدكاترة
 router.get('/doctors', authenticate, isSuperAdmin, async (req, res) => {
     try {
+        console.log('📊 جلب كل الدكاترة...');
+
         const { data: doctors, error } = await supabaseAdmin
             .from('doctors')
             .select(`
-                *,
+                id,
+                name,
+                title,
+                gender,
+                department_id,
+                is_active,
+                created_at,
                 department:departments(name)
             `)
             .order('created_at', { ascending: false });
 
-        if (error) throw error;
+        if (error) {
+            console.error('❌ خطأ في جلب الدكاترة:', error);
+            return res.status(500).json({ 
+                success: false, 
+                error: error.message 
+            });
+        }
 
-        doctors.forEach(d => delete d.password_hash);
+        console.log(`✅ تم جلب ${doctors?.length || 0} دكتور`);
 
         res.json({
             success: true,
-            doctors
+            doctors: doctors || []
         });
     } catch (error) {
-        console.error('Get doctors error:', error);
-        res.status(500).json({ error: error.message });
+        console.error('❌ خطأ في جلب الدكاترة:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
     }
 });
 
@@ -220,17 +256,23 @@ router.get('/doctors/department/:departmentId', authenticate, isSuperAdmin, asyn
 
         const { data, error } = await supabaseAdmin
             .from('doctors')
-            .select('*')
+            .select(`
+                id,
+                name,
+                title,
+                gender,
+                department_id,
+                is_active,
+                created_at
+            `)
             .eq('department_id', departmentId)
             .order('name');
 
         if (error) throw error;
 
-        data.forEach(d => delete d.password_hash);
-
         res.json({
             success: true,
-            doctors: data
+            doctors: data || []
         });
     } catch (error) {
         console.error('Get department doctors error:', error);
@@ -465,66 +507,6 @@ router.delete('/time-slots/:id', authenticate, isSuperAdmin, async (req, res) =>
     } catch (error) {
         console.error('Delete time slot error:', error);
         res.status(500).json({ error: error.message });
-    }
-});
-
-// 5. جلب الفترات المتاحة لدكتور في يوم معين (للمستخدمين)
-router.get('/available-slots', async (req, res) => {
-    try {
-        const { doctor_id, date } = req.query;
-
-        if (!doctor_id || !date) {
-            return res.status(400).json({ 
-                success: false,
-                error: '❌ الدكتور والتاريخ مطلوبين' 
-            });
-        }
-
-        // استخراج اليوم من التاريخ
-        const dateObj = new Date(date + 'T00:00:00');
-        const dayOfWeek = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
-
-        // جلب الفترات المتاحة لهذا اليوم
-        const { data, error } = await supabaseAdmin
-            .from('time_slots')
-            .select(`
-                *,
-                bookings:bookings(count)
-            `)
-            .eq('doctor_id', doctor_id)
-            .eq('day_of_week', dayOfWeek)
-            .eq('is_active', true)
-            .order('start_time');
-
-        if (error) {
-            return res.status(500).json({ 
-                success: false,
-                error: error.message 
-            });
-        }
-
-        const availableSlots = data
-            .map(slot => {
-                const bookedCount = slot.bookings[0]?.count || 0;
-                return {
-                    ...slot,
-                    booked_count: bookedCount,
-                    available_slots: slot.max_bookings - bookedCount,
-                    is_available: (slot.max_bookings - bookedCount) > 0
-                };
-            })
-            .filter(slot => slot.is_available);
-
-        res.json({
-            success: true,
-            available_slots: availableSlots
-        });
-    } catch (error) {
-        console.error('❌ خطأ في جلب الفترات:', error);
-        res.status(500).json({ 
-            success: false,
-            error: error.message 
-        });
     }
 });
 
