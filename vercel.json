@@ -1,0 +1,56 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "builds": [
+    {
+      "src": "api/*.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/",
+      "dest": "/index.html"
+    },
+    {
+      "src": "/api/departments",
+      "dest": "/api/departments.js"
+    },
+    {
+      "src": "/api/departments/(.*)",
+      "dest": "/api/departments.js"
+    },
+    {
+      "src": "/api/doctors",
+      "dest": "/api/doctors.js"
+    },
+    {
+      "src": "/api/doctors/(.*)",
+      "dest": "/api/doctors.js"
+    },
+    {
+      "src": "/api/timeslots",
+      "dest": "/api/timeslots.js"
+    },
+    {
+      "src": "/api/timeslots/(.*)",
+      "dest": "/api/timeslots.js"
+    },
+    {
+      "src": "/api/bookings",
+      "dest": "/api/bookings.js"
+    },
+    {
+      "src": "/api/bookings/(.*)",
+      "dest": "/api/bookings.js"
+    },
+    {
+      "src": "/api/admin",
+      "dest": "/api/admin.js"
+    },
+    {
+      "src": "/api/admin/(.*)",
+      "dest": "/api/admin.js"
+    }
+  ]
+}
