@@ -199,11 +199,11 @@ app.get('/api/departments/:id', async (req, res) => {
 
 /**
  * POST /api/departments
- * إضافة قسم جديد (الأدمن فقط)
+ * إضافة قسم جديد مع أنواع الأطباء (الأدمن فقط)
  */
 app.post('/api/departments', async (req, res) => {
   try {
-    const { name, icon_url } = req.body;
+    const { name, icon_url, doctor_types } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: 'اسم القسم مطلوب' });
@@ -218,7 +218,8 @@ app.post('/api/departments', async (req, res) => {
 
     const nextOrder = (maxOrder && maxOrder.length > 0) ? maxOrder[0].order + 1 : 1;
 
-    const { data, error } = await supabase
+    // 1. إضافة القسم
+    const { data: department, error: deptError } = await supabase
       .from('departments')
       .insert([{ 
         name, 
@@ -230,12 +231,43 @@ app.post('/api/departments', async (req, res) => {
       .select()
       .single();
 
-    if (error) {
-      console.error('❌ Supabase error:', error);
-      return res.status(500).json({ error: error.message });
+    if (deptError) {
+      console.error('❌ Supabase error:', deptError);
+      return res.status(500).json({ error: deptError.message });
     }
 
-    res.status(201).json(data);
+    // 2. إضافة أنواع الأطباء (إذا وجدت)
+    let addedTypes = [];
+    if (doctor_types && Array.isArray(doctor_types) && doctor_types.length > 0) {
+      const typesToInsert = doctor_types.map(type => ({
+        department_id: department.id,
+        type: type.type,
+        label: type.label || (type.type === 'male' ? 'دكتور' : 'دكتورة'),
+        enabled: type.enabled !== undefined ? type.enabled : true,
+        created_at: new Date(),
+        updated_at: new Date()
+      }));
+
+      const { data: types, error: typesError } = await supabase
+        .from('doctor_types')
+        .insert(typesToInsert)
+        .select();
+
+      if (typesError) {
+        console.error('❌ Types error:', typesError);
+        // نحذف القسم لو فشل إضافة الأنواع
+        await supabase.from('departments').delete().eq('id', department.id);
+        return res.status(500).json({ error: typesError.message });
+      }
+
+      addedTypes = types;
+    }
+
+    // 3. إرجاع البيانات كاملة
+    res.status(201).json({
+      ...department,
+      doctor_types: addedTypes
+    });
   } catch (error) {
     console.error('❌ Server error:', error);
     res.status(500).json({ error: 'Server error: ' + error.message });
