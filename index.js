@@ -924,6 +924,7 @@ app.put('/api/departments/:id/save', async (req, res) => {
 /**
  * POST /api/bookings
  * إنشاء حجز جديد (المريض)
+ * يدعم date و booking_date
  */
 app.post('/api/bookings', async (req, res) => {
   try {
@@ -932,12 +933,16 @@ app.post('/api/bookings', async (req, res) => {
       doctor_type,
       slot_id,
       date,
+      booking_date,
       patient_name,
       patient_age,
       patient_phone
     } = req.body;
 
-    if (!department_id || !doctor_type || !slot_id || !date || !patient_name || !patient_age || !patient_phone) {
+    // استخدام date أو booking_date
+    const bookingDate = date || booking_date;
+
+    if (!department_id || !doctor_type || !slot_id || !bookingDate || !patient_name || !patient_age || !patient_phone) {
       return res.status(400).json({ error: 'جميع الحقول مطلوبة' });
     }
 
@@ -977,7 +982,7 @@ app.post('/api/bookings', async (req, res) => {
         .select('id, capacity')
         .eq('id', slot_id)
         .eq('doctor_type_id', doctorType.id)
-        .eq('date', date)
+        .eq('date', bookingDate)
         .single();
 
       if (customSlot) {
@@ -994,7 +999,7 @@ app.post('/api/bookings', async (req, res) => {
     const bookingData = {
       department_id,
       doctor_type_id: doctorType.id,
-      date,
+      booking_date: bookingDate,
       patient_name,
       patient_age,
       patient_phone,
