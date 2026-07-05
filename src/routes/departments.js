@@ -1,8 +1,9 @@
  const express = require('express');
 const router = express.Router();
-const { supabase } = require('../config/supabase');
+const { supabase, supabaseAdmin } = require('../config/supabase');
+const { authenticate, isSuperAdmin } = require('../middleware/auth');
 
-// 📂 جلب كل الأقسام
+// 📂 جلب كل الأقسام (بدون توكن)
 router.get('/', async (req, res) => {
     try {
         const { data, error } = await supabase
@@ -30,7 +31,36 @@ router.get('/', async (req, res) => {
     }
 });
 
-// 📂 جلب دكاترة قسم معين
+// 📂 جلب قسم واحد (بدون توكن)
+router.get('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const { data, error } = await supabase
+            .from('departments')
+            .select(`
+                *,
+                doctors:doctors(count)
+            `)
+            .eq('id', id)
+            .single();
+
+        if (error) throw error;
+
+        res.json({
+            success: true,
+            department: {
+                ...data,
+                doctors_count: data.doctors[0]?.count || 0
+            }
+        });
+    } catch (error) {
+        console.error('Get department error:', error);
+        res.status(500).json({ error: '❌ حدث خطأ في السيرفر' });
+    }
+});
+
+// 📂 جلب دكاترة قسم معين (بدون توكن)
 router.get('/:departmentId/doctors', async (req, res) => {
     try {
         const { departmentId } = req.params;
@@ -54,74 +84,104 @@ router.get('/:departmentId/doctors', async (req, res) => {
     }
 });
 
-// 📅 جلب الفترات المتاحة لدكتور في تاريخ معين
-router.get('/available-slots', async (req, res) => {
+// ➕ إضافة قسم جديد (للسوبر أدمن)
+router.post('/', authenticate, isSuperAdmin, async (req, res) => {
     try {
-        const { doctor_id, date } = req.query;
+        const { name } = req.body;
 
-        console.log('🔍 جلب الفترات المتاحة:');
-        console.log('   الدكتور:', doctor_id);
-        console.log('   التاريخ:', date);
-
-        if (!doctor_id || !date) {
-            return res.status(400).json({ 
-                success: false,
-                error: '❌ الدكتور والتاريخ مطلوبين' 
-            });
+        if (!name) {
+            return res.status(400).json({ error: '❌ اسم القسم مطلوب' });
         }
 
-        // ✅ تحويل التاريخ لـ day_of_week باللغة الإنجليزية
-        const dateObj = new Date(date + 'T00:00:00');
-        const dayOfWeek = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
-        
-        console.log('   اليوم:', dayOfWeek);
+        // التحقق من عدم وجود القسم
+        const { data: existing } = await supabaseAdmin
+            .from('departments')
+            .select('id')
+            .eq('name', name)
+            .single();
 
-        // ✅ جلب الفترات المتاحة
-        const { data, error } = await supabase
-            .from('time_slots')
-            .select(`
-                *,
-                bookings:bookings(count)
-            `)
-            .eq('doctor_id', doctor_id)
-            .eq('day_of_week', dayOfWeek)
-            .eq('is_active', true);
-
-        if (error) {
-            console.error('❌ خطأ في قاعدة البيانات:', error);
-            return res.status(500).json({ 
-                success: false,
-                error: error.message 
-            });
+        if (existing) {
+            return res.status(400).json({ error: '❌ هذا القسم موجود بالفعل' });
         }
 
-        console.log('📊 عدد الفترات:', data?.length || 0);
+        const { data, error } = await supabaseAdmin
+            .from('departments')
+            .insert({ name })
+            .select()
+            .single();
 
-        // حساب الفترات المتاحة
-        const availableSlots = data
-            .map(slot => {
-                const bookedCount = slot.bookings[0]?.count || 0;
-                return {
-                    ...slot,
-                    booked_count: bookedCount,
-                    available_slots: slot.max_bookings - bookedCount,
-                    is_available: (slot.max_bookings - bookedCount) > 0
-                };
-            })
-            .filter(slot => slot.is_available);
+        if (error) throw error;
 
-        console.log('✅ الفترات المتاحة:', availableSlots.length);
+        res.status(201).json({
+            success: true,
+            message: '✅ تم إضافة القسم بنجاح',
+            department: data
+        });
+    } catch (error) {
+        console.error('Add department error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ✏️ تعديل قسم (للسوبر أدمن)
+router.put('/:id', authenticate, isSuperAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name } = req.body;
+
+        if (!name) {
+            return res.status(400).json({ error: '❌ اسم القسم مطلوب' });
+        }
+
+        const { data, error } = await supabaseAdmin
+            .from('departments')
+            .update({ name })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw error;
 
         res.json({
             success: true,
-            available_slots: availableSlots
+            message: '✅ تم تعديل القسم بنجاح',
+            department: data
         });
     } catch (error) {
-        console.error('❌ خطأ في جلب الفترات:', error);
-        res.status(500).json({ 
-            success: false,
-            error: '❌ حدث خطأ في السيرفر' 
+        console.error('Update department error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 🗑️ حذف قسم (للسوبر أدمن)
+router.delete('/:id', authenticate, isSuperAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // التحقق من وجود دكاترة في القسم
+        const { data: doctors } = await supabaseAdmin
+            .from('doctors')
+            .select('id')
+            .eq('department_id', id);
+
+        if (doctors && doctors.length > 0) {
+            return res.status(400).json({ 
+                error: '❌ لا يمكن حذف القسم لأنه يحتوي على دكاترة' 
+            });
+        }
+
+        await supabaseAdmin
+            .from('departments')
+            .delete()
+            .eq('id', id);
+
+        res.json({
+            success: true,
+            message: '✅ تم حذف القسم بنجاح'
         });
+    } catch (error) {
+        console.error('Delete department error:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
