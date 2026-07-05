@@ -81,30 +81,49 @@ app.post('/api/admin/login', async (req, res) => {
 
 /**
  * GET /api/departments
- * جلب كل الأقسام (للمريض والأدمن)
+ * جلب كل الأقسام مع أنواع الأطباء (للمريض والأدمن)
  */
 app.get('/api/departments', async (req, res) => {
   try {
     console.log('📡 GET /api/departments');
-    const { data, error } = await supabase
+    
+    // جلب الأقسام
+    const { data: departments, error: deptError } = await supabase
       .from('departments')
-      .select(`
-        *,
-        doctor_types:doctor_types(
-          type,
-          label,
-          enabled
-        )
-      `)
+      .select('*')
       .order('order', { ascending: true });
 
-    if (error) {
-      console.error('❌ Supabase error:', error);
-      return res.status(500).json({ error: error.message });
+    if (deptError) {
+      console.error('❌ Supabase error:', deptError);
+      return res.status(500).json({ error: deptError.message });
     }
 
-    console.log('✅ Found', data?.length || 0, 'departments');
-    res.json(data || []);
+    // جلب أنواع الأطباء لكل قسم
+    const { data: doctorTypes, error: typesError } = await supabase
+      .from('doctor_types')
+      .select(`
+        *,
+        fixed_slots:fixed_slots(*),
+        custom_slots:custom_slots(*)
+      `)
+      .eq('enabled', true);
+
+    if (typesError) {
+      console.error('❌ Types error:', typesError);
+      return res.status(500).json({ error: typesError.message });
+    }
+
+    // تجميع البيانات
+    const result = departments.map(dept => {
+      const types = doctorTypes.filter(dt => dt.department_id === dept.id);
+      return {
+        ...dept,
+        doctor_types: types
+      };
+    });
+
+    console.log('✅ Found', result?.length || 0, 'departments');
+    res.json(result || []);
   } catch (error) {
     console.error('❌ Server error:', error);
     res.status(500).json({ error: 'Server error: ' + error.message });
@@ -113,11 +132,12 @@ app.get('/api/departments', async (req, res) => {
 
 /**
  * GET /api/departments/:id
- * جلب تفاصيل قسم معين (مع الفترات)
+ * جلب تفاصيل قسم معين مع الفترات
  */
 app.get('/api/departments/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    console.log('📡 GET /api/departments/:id', id);
 
     // جلب بيانات القسم
     const { data: department, error: deptError } = await supabase
@@ -127,6 +147,7 @@ app.get('/api/departments/:id', async (req, res) => {
       .single();
 
     if (deptError || !department) {
+      console.error('❌ Department not found:', deptError);
       return res.status(404).json({ error: 'القسم غير موجود' });
     }
 
@@ -135,17 +156,40 @@ app.get('/api/departments/:id', async (req, res) => {
       .from('doctor_types')
       .select(`
         *,
-        fixed_slots:fixed_slots(*),
-        custom_slots:custom_slots(*)
+        fixed_slots:fixed_slots(
+          id,
+          capacity,
+          from_time,
+          to_time,
+          "order"
+        ),
+        custom_slots:custom_slots(
+          id,
+          date,
+          capacity,
+          from_time,
+          to_time
+        )
       `)
       .eq('department_id', id)
       .order('type', { ascending: true });
 
     if (typesError) {
+      console.error('❌ Types error:', typesError);
       return res.status(500).json({ error: typesError.message });
     }
 
-    department.doctor_types = doctorTypes || [];
+    // ترتيب الفترات
+    const formattedTypes = (doctorTypes || []).map(dt => ({
+      ...dt,
+      fixed_slots: (dt.fixed_slots || []).sort((a, b) => a.order - b.order)
+    }));
+
+    department.doctor_types = formattedTypes;
+    
+    console.log('✅ Department found:', department.name);
+    console.log('✅ Doctor types:', formattedTypes.length);
+    
     res.json(department);
   } catch (error) {
     console.error('❌ Server error:', error);
@@ -176,7 +220,13 @@ app.post('/api/departments', async (req, res) => {
 
     const { data, error } = await supabase
       .from('departments')
-      .insert([{ name, icon_url: icon_url || null, order: nextOrder }])
+      .insert([{ 
+        name, 
+        icon_url: icon_url || null, 
+        order: nextOrder,
+        created_at: new Date(),
+        updated_at: new Date()
+      }])
       .select()
       .single();
 
@@ -268,7 +318,7 @@ app.put('/api/departments/reorder', async (req, res) => {
     for (let i = 0; i < ordered_ids.length; i++) {
       const { error } = await supabase
         .from('departments')
-        .update({ order: i + 1 })
+        .update({ order: i + 1, updated_at: new Date() })
         .eq('id', ordered_ids[i]);
 
       if (error) throw error;
@@ -419,7 +469,9 @@ app.post('/api/departments/:departmentId/doctor-types/:type/fixed-slots', async 
         capacity,
         from_time,
         to_time,
-        order: nextOrder
+        order: nextOrder,
+        created_at: new Date(),
+        updated_at: new Date()
       }])
       .select()
       .single();
@@ -515,7 +567,7 @@ app.put('/api/departments/:departmentId/doctor-types/:type/fixed-slots/reorder',
     for (let i = 0; i < slot_ids.length; i++) {
       const { error } = await supabase
         .from('fixed_slots')
-        .update({ order: i + 1 })
+        .update({ order: i + 1, updated_at: new Date() })
         .eq('id', slot_ids[i])
         .eq('doctor_type_id', doctorType.id);
 
@@ -611,7 +663,9 @@ app.post('/api/departments/:departmentId/doctor-types/:type/custom-slots', async
         date,
         capacity,
         from_time,
-        to_time
+        to_time,
+        created_at: new Date(),
+        updated_at: new Date()
       }])
       .select()
       .single();
@@ -904,18 +958,6 @@ app.post('/api/bookings', async (req, res) => {
       return res.status(404).json({ error: 'الموعد غير موجود' });
     }
 
-    // التحقق من عدد الحجوزات
-    const { data: bookingsCount, error: countError } = await supabase
-      .from('bookings')
-      .select('id', { count: 'exact', head: true })
-      .eq(slotType === 'fixed' ? 'fixed_slot_id' : 'custom_slot_id', slot_id)
-      .eq('date', date);
-
-    if (countError) throw countError;
-
-    // هنا هنحتاج نضيف capacity في booking
-    // لكن هنعملها لاحقاً
-
     // إنشاء الحجز
     const bookingData = {
       department_id,
@@ -924,7 +966,8 @@ app.post('/api/bookings', async (req, res) => {
       patient_name,
       patient_age,
       patient_phone,
-      created_at: new Date()
+      created_at: new Date(),
+      updated_at: new Date()
     };
 
     if (slotType === 'fixed') {
