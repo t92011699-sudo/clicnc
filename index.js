@@ -777,7 +777,7 @@ app.put('/api/departments/:id/save', async (req, res) => {
 });
 
 // ============================
-// 6. الحجوزات (Bookings) - مع تحديث current_bookings
+// 6. الحجوزات (Bookings) - مع عرض القسم للأدمن
 // ============================
 
 /**
@@ -903,7 +903,7 @@ app.post('/api/bookings', async (req, res) => {
 
 /**
  * GET /api/bookings/all
- * جلب كل الحجوزات
+ * جلب كل الحجوزات مع بيانات القسم
  */
 app.get('/api/bookings/all', async (req, res) => {
   try {
@@ -911,38 +911,65 @@ app.get('/api/bookings/all', async (req, res) => {
       .from('bookings')
       .select(`
         *,
-        departments:department_id(name),
-        doctor_types:doctor_type_id(type, label),
-        custom_slots:custom_slot_id(date, from_time, to_time, capacity, current_bookings)
+        departments:department_id(
+          id,
+          name,
+          icon_url
+        ),
+        doctor_types:doctor_type_id(
+          id,
+          type,
+          label
+        ),
+        custom_slots:custom_slot_id(
+          id,
+          date,
+          from_time,
+          to_time,
+          capacity,
+          current_bookings
+        )
       `)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Supabase error:', error);
+      return res.status(500).json({ error: error.message });
+    }
 
-    const formattedData = (data || []).map(booking => {
-      const slotFrom = booking.custom_slots?.from_time?.substring(0, 5) || null;
-      const slotTo = booking.custom_slots?.to_time?.substring(0, 5) || null;
-      
-      return {
-        id: booking.id,
-        patient_name: booking.patient_name,
-        patient_age: booking.patient_age,
-        patient_phone: booking.patient_phone,
-        patient_gender: booking.patient_gender,
-        booking_date: booking.booking_date,
-        booking_time: booking.booking_time,
-        slot_from: slotFrom,
-        slot_to: slotTo,
-        slot_range: slotFrom && slotTo ? `${slotFrom} - ${slotTo}` : null,
-        capacity: booking.custom_slots?.capacity || null,
-        current_bookings: booking.custom_slots?.current_bookings || 0,
-        doctor: booking.doctor_types?.label || null,
-        doctor_type: booking.doctor_types?.type || null,
-        department: booking.departments?.name || null,
-        created_at: booking.created_at,
-        summary: `حجز ${booking.patient_name} في ${booking.booking_date} الفترة ${booking.booking_time || slotFrom + ' - ' + slotTo} مع ${booking.doctor_types?.label || ''}`
-      };
-    });
+    // ✅ تنسيق البيانات مع عرض القسم
+    const formattedData = (data || []).map(booking => ({
+      id: booking.id,
+      patient_name: booking.patient_name,
+      patient_age: booking.patient_age,
+      patient_phone: booking.patient_phone,
+      patient_gender: booking.patient_gender,
+      booking_date: booking.booking_date,
+      booking_time: booking.booking_time,
+      // ✅ بيانات القسم
+      department: {
+        id: booking.departments?.id || null,
+        name: booking.departments?.name || 'غير معروف'
+      },
+      // ✅ بيانات الدكتور
+      doctor: {
+        id: booking.doctor_types?.id || null,
+        type: booking.doctor_types?.type || null,
+        label: booking.doctor_types?.label || 'غير معروف'
+      },
+      // ✅ بيانات الفترة
+      slot: {
+        id: booking.custom_slots?.id || null,
+        date: booking.custom_slots?.date || null,
+        from_time: booking.custom_slots?.from_time ? booking.custom_slots.from_time.substring(0, 5) : null,
+        to_time: booking.custom_slots?.to_time ? booking.custom_slots.to_time.substring(0, 5) : null,
+        capacity: booking.custom_slots?.capacity || 0,
+        current_bookings: booking.custom_slots?.current_bookings || 0
+      },
+      created_at: booking.created_at,
+      // ✅ عرض مختصر
+      display: `${booking.patient_name} | ${booking.booking_date} | ${booking.departments?.name || 'غير معروف'} | ${booking.doctor_types?.label || 'غير معروف'}`
+    }));
 
     res.json(formattedData);
   } catch (error) {
@@ -961,19 +988,38 @@ app.get('/api/admin/bookings', async (req, res) => {
       .from('bookings')
       .select(`
         *,
-        departments:department_id(name),
-        doctor_types:doctor_type_id(type, label),
-        custom_slots:custom_slot_id(date, from_time, to_time, capacity, current_bookings)
+        departments:department_id(
+          id,
+          name,
+          icon_url
+        ),
+        doctor_types:doctor_type_id(
+          id,
+          type,
+          label
+        ),
+        custom_slots:custom_slot_id(
+          id,
+          date,
+          from_time,
+          to_time,
+          capacity,
+          current_bookings
+        )
       `)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Supabase error:', error);
+      return res.status(500).json({ error: error.message });
+    }
 
     const formattedData = (data || []).map(booking => {
       const slotFrom = booking.custom_slots?.from_time?.substring(0, 5) || null;
       const slotTo = booking.custom_slots?.to_time?.substring(0, 5) || null;
       
       return {
+        // ✅ بيانات المريض
         patient: {
           id: booking.id,
           name: booking.patient_name,
@@ -981,6 +1027,7 @@ app.get('/api/admin/bookings', async (req, res) => {
           phone: booking.patient_phone,
           gender: booking.patient_gender === 'male' ? 'ذكر' : 'أنثى'
         },
+        // ✅ بيانات الحجز
         booking: {
           id: booking.id,
           date: booking.booking_date,
@@ -988,14 +1035,24 @@ app.get('/api/admin/bookings', async (req, res) => {
           slot_range: slotFrom && slotTo ? `${slotFrom} - ${slotTo}` : null,
           slot_from: slotFrom,
           slot_to: slotTo,
-          capacity: booking.custom_slots?.capacity || null,
-          current_bookings: booking.custom_slots?.current_bookings || 0,
-          doctor: booking.doctor_types?.label || null,
-          doctor_type: booking.doctor_types?.type || null,
-          department: booking.departments?.name || null
+          capacity: booking.custom_slots?.capacity || 0,
+          current_bookings: booking.custom_slots?.current_bookings || 0
+        },
+        // ✅ بيانات القسم
+        department: {
+          id: booking.departments?.id || null,
+          name: booking.departments?.name || 'غير معروف',
+          icon: booking.departments?.icon_url || null
+        },
+        // ✅ بيانات الدكتور
+        doctor: {
+          id: booking.doctor_types?.id || null,
+          type: booking.doctor_types?.type || null,
+          label: booking.doctor_types?.label || 'غير معروف'
         },
         created_at: booking.created_at,
-        display: `${booking.patient_name} | ${booking.booking_date} | الفترة ${booking.booking_time || slotFrom + ' - ' + slotTo} | ${booking.doctor_types?.label || ''} | ${booking.departments?.name || ''}`
+        // ✅ عرض واضح للأدمن
+        display: `${booking.patient_name} | ${booking.booking_date} | ${booking.departments?.name || 'غير معروف'} | ${booking.doctor_types?.label || 'غير معروف'} | ${slotFrom || ''} - ${slotTo || ''}`
       };
     });
 
@@ -1018,13 +1075,32 @@ app.get('/api/bookings/department/:departmentId', async (req, res) => {
       .from('bookings')
       .select(`
         *,
-        doctor_types:doctor_type_id(type, label),
-        custom_slots:custom_slot_id(date, from_time, to_time, capacity, current_bookings)
+        departments:department_id(
+          id,
+          name,
+          icon_url
+        ),
+        doctor_types:doctor_type_id(
+          id,
+          type,
+          label
+        ),
+        custom_slots:custom_slot_id(
+          id,
+          date,
+          from_time,
+          to_time,
+          capacity,
+          current_bookings
+        )
       `)
       .eq('department_id', departmentId)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Supabase error:', error);
+      return res.status(500).json({ error: error.message });
+    }
 
     const formattedData = (data || []).map(booking => {
       const slotFrom = booking.custom_slots?.from_time?.substring(0, 5) || null;
@@ -1038,13 +1114,25 @@ app.get('/api/bookings/department/:departmentId', async (req, res) => {
         patient_gender: booking.patient_gender,
         booking_date: booking.booking_date,
         booking_time: booking.booking_time,
-        slot_range: slotFrom && slotTo ? `${slotFrom} - ${slotTo}` : null,
-        slot_from: slotFrom,
-        slot_to: slotTo,
-        capacity: booking.custom_slots?.capacity || null,
-        current_bookings: booking.custom_slots?.current_bookings || 0,
-        doctor: booking.doctor_types?.label || null,
-        doctor_type: booking.doctor_types?.type || null,
+        // ✅ بيانات القسم
+        department: {
+          id: booking.departments?.id || null,
+          name: booking.departments?.name || 'غير معروف'
+        },
+        // ✅ بيانات الدكتور
+        doctor: {
+          id: booking.doctor_types?.id || null,
+          type: booking.doctor_types?.type || null,
+          label: booking.doctor_types?.label || 'غير معروف'
+        },
+        // ✅ بيانات الفترة
+        slot: {
+          id: booking.custom_slots?.id || null,
+          from_time: slotFrom,
+          to_time: slotTo,
+          capacity: booking.custom_slots?.capacity || 0,
+          current_bookings: booking.custom_slots?.current_bookings || 0
+        },
         created_at: booking.created_at,
         summary: `حجز ${booking.patient_name} في ${booking.booking_date} الفترة ${booking.booking_time || slotFrom + ' - ' + slotTo}`
       };
@@ -1129,7 +1217,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Supabase: ${supabaseUrl ? '✅ Connected' : '❌ Not connected'}`);
   console.log(`🔐 JWT: ${jwtSecret ? '✅ Configured' : '❌ Missing'}`);
-  console.log(`📦 Version: 3.0.0 (مع تحديث current_bookings)`);
+  console.log(`📦 Version: 3.0.0 (مع عرض القسم للأدمن)`);
 });
 
 module.exports = app;
