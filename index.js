@@ -142,7 +142,8 @@ app.get('/api/departments', async (req, res) => {
           from_time_formatted: slot.from_time.substring(0, 5),
           to_time_formatted: slot.to_time.substring(0, 5),
           slot_display: `${slot.from_time.substring(0, 5)} - ${slot.to_time.substring(0, 5)}`,
-          available: (slot.current_bookings || 0) < slot.capacity
+          available: (slot.current_bookings || 0) < slot.capacity,
+          remaining: Math.max(0, (slot.capacity || 0) - (slot.current_bookings || 0))
         }))
       }));
       
@@ -439,7 +440,7 @@ app.put('/api/departments/:id/doctor-types', async (req, res) => {
 });
 
 // ============================
-// 4. الفترات المخصصة (Custom Slots)
+// 4. الفترات المخصصة (Custom Slots) - مع إمكانية تعديل السعة
 // ============================
 
 /**
@@ -606,21 +607,32 @@ app.post('/api/departments/:departmentId/doctor-types/:type/custom-slots', async
 
 /**
  * PUT /api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId
- * تعديل فترة مخصصة
+ * تعديل فترة مخصصة (يشمل capacity)
  */
 app.put('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId', async (req, res) => {
   try {
     const { slotId } = req.params;
     const { capacity, from_time, to_time } = req.body;
 
+    // ✅ بناء كائن التحديث
+    const updateData = {
+      updated_at: new Date()
+    };
+
+    // ✅ إضافة الحقول التي تم إرسالها فقط
+    if (capacity !== undefined) {
+      updateData.capacity = capacity;
+    }
+    if (from_time) {
+      updateData.from_time = from_time;
+    }
+    if (to_time) {
+      updateData.to_time = to_time;
+    }
+
     const { data, error } = await supabase
       .from('custom_slots')
-      .update({
-        capacity,
-        from_time,
-        to_time,
-        updated_at: new Date()
-      })
+      .update(updateData)
       .eq('id', slotId)
       .select()
       .single();
@@ -628,7 +640,83 @@ app.put('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId'
     if (error) throw error;
     if (!data) return res.status(404).json({ error: 'الفترة غير موجودة' });
 
-    res.json(data);
+    res.json({
+      message: 'تم تحديث الفترة بنجاح',
+      slot: {
+        id: data.id,
+        date: data.date,
+        from_time: data.from_time,
+        to_time: data.to_time,
+        capacity: data.capacity,
+        current_bookings: data.current_bookings || 0,
+        remaining: (data.capacity || 0) - (data.current_bookings || 0),
+        available: (data.current_bookings || 0) < (data.capacity || 0)
+      }
+    });
+  } catch (error) {
+    console.error('❌ Server error:', error);
+    res.status(500).json({ error: 'Server error: ' + error.message });
+  }
+});
+
+/**
+ * PATCH /api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId/capacity
+ * تعديل السعة فقط
+ */
+app.patch('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId/capacity', async (req, res) => {
+  try {
+    const { slotId } = req.params;
+    const { capacity } = req.body;
+
+    if (capacity === undefined || capacity < 0) {
+      return res.status(400).json({ error: 'السعة مطلوبة ويجب أن تكون أكبر من أو تساوي 0' });
+    }
+
+    // ✅ التحقق من أن السعة الجديدة لا تقل عن current_bookings
+    const { data: currentSlot, error: fetchError } = await supabase
+      .from('custom_slots')
+      .select('id, capacity, current_bookings, date, from_time, to_time')
+      .eq('id', slotId)
+      .single();
+
+    if (fetchError || !currentSlot) {
+      return res.status(404).json({ error: 'الفترة غير موجودة' });
+    }
+
+    if (capacity < currentSlot.current_bookings) {
+      return res.status(400).json({ 
+        error: `لا يمكن تقليل السعة إلى أقل من عدد الحجوزات الحالية (${currentSlot.current_bookings})`,
+        current_bookings: currentSlot.current_bookings,
+        requested_capacity: capacity
+      });
+    }
+
+    // ✅ تحديث السعة فقط
+    const { data, error } = await supabase
+      .from('custom_slots')
+      .update({
+        capacity: capacity,
+        updated_at: new Date()
+      })
+      .eq('id', slotId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      message: 'تم تحديث السعة بنجاح',
+      slot: {
+        id: data.id,
+        date: data.date,
+        from_time: data.from_time,
+        to_time: data.to_time,
+        capacity: data.capacity,
+        current_bookings: data.current_bookings || 0,
+        remaining: (data.capacity || 0) - (data.current_bookings || 0),
+        available: (data.current_bookings || 0) < (data.capacity || 0)
+      }
+    });
   } catch (error) {
     console.error('❌ Server error:', error);
     res.status(500).json({ error: 'Server error: ' + error.message });
@@ -777,7 +865,7 @@ app.put('/api/departments/:id/save', async (req, res) => {
 });
 
 // ============================
-// 6. الحجوزات (Bookings) - مع عرض القسم للأدمن
+// 6. الحجوزات (Bookings)
 // ============================
 
 /**
@@ -1183,7 +1271,7 @@ app.delete('/api/bookings/:id', async (req, res) => {
 
     if (deleteError) throw deleteError;
 
-    // ✅ 4. تحديث current_bookings في custom_slots (تقليل العدد)
+    // ✅ 4. تحديث current_bookings فقط (capacity ثابت)
     const newCurrentBookings = Math.max(0, (customSlot.current_bookings || 0) - 1);
     
     const { error: updateError } = await supabase
@@ -1199,8 +1287,9 @@ app.delete('/api/bookings/:id', async (req, res) => {
     res.json({ 
       message: 'تم إلغاء الحجز وتحديث السعة بنجاح',
       slot_id: customSlot.id,
-      remaining_capacity: customSlot.capacity - newCurrentBookings,
-      current_bookings: newCurrentBookings
+      capacity: customSlot.capacity,
+      current_bookings: newCurrentBookings,
+      remaining: customSlot.capacity - newCurrentBookings
     });
   } catch (error) {
     console.error('❌ Server error:', error);
@@ -1217,7 +1306,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Supabase: ${supabaseUrl ? '✅ Connected' : '❌ Not connected'}`);
   console.log(`🔐 JWT: ${jwtSecret ? '✅ Configured' : '❌ Missing'}`);
-  console.log(`📦 Version: 3.0.0 (مع عرض القسم للأدمن)`);
+  console.log(`📦 Version: 3.0.0 (مع إمكانية تعديل الـ Capacity)`);
 });
 
 module.exports = app;
