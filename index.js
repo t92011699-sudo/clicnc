@@ -96,7 +96,7 @@ app.post('/api/admin/login', async (req, res) => {
 });
 
 // ============================
-// 2. الأقسام (Departments) - بدون حماية
+// 2. الأقسام (Departments)
 // ============================
 
 /**
@@ -360,7 +360,7 @@ app.put('/api/departments/reorder', async (req, res) => {
 });
 
 // ============================
-// 3. أنواع الأطباء (Doctor Types) - بدون حماية
+// 3. أنواع الأطباء (Doctor Types)
 // ============================
 
 /**
@@ -410,7 +410,7 @@ app.put('/api/departments/:id/doctor-types', async (req, res) => {
 });
 
 // ============================
-// 4. الفترات المخصصة (Custom Slots) - بدون حماية
+// 4. الفترات المخصصة (Custom Slots)
 // ============================
 
 /**
@@ -557,7 +557,7 @@ app.delete('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slot
 });
 
 // ============================
-// 5. حفظ التعديلات (Save) - بدون حماية
+// 5. حفظ التعديلات (Save)
 // ============================
 
 /**
@@ -675,12 +675,12 @@ app.put('/api/departments/:id/save', async (req, res) => {
 });
 
 // ============================
-// 6. الحجوزات (Bookings) - بدون حماية
+// 6. الحجوزات (Bookings) - مع منع تكرار رقم التليفون
 // ============================
 
 /**
  * POST /api/bookings
- * إنشاء حجز جديد
+ * إنشاء حجز جديد (غير محمي - للمريض)
  */
 app.post('/api/bookings', async (req, res) => {
   try {
@@ -696,12 +696,33 @@ app.post('/api/bookings', async (req, res) => {
       patient_gender
     } = req.body;
 
+    // ✅ التحقق من جميع الحقول
     if (!department_id || !doctor_type || !slot_id || !booking_date || !booking_time || !patient_name || !patient_age || !patient_phone || !patient_gender) {
       return res.status(400).json({ error: 'جميع الحقول مطلوبة' });
     }
 
+    // ✅ التحقق من صحة الجنس
     if (!['male', 'female'].includes(patient_gender)) {
       return res.status(400).json({ error: 'الجنس يجب أن يكون male أو female' });
+    }
+
+    // ✅ التحقق من عدم وجود رقم تليفون مكرر
+    const { data: existingPhone, error: phoneError } = await supabase
+      .from('bookings')
+      .select('id, patient_phone, patient_name')
+      .eq('patient_phone', patient_phone)
+      .maybeSingle();
+
+    if (phoneError) throw phoneError;
+
+    if (existingPhone) {
+      return res.status(400).json({ 
+        error: 'رقم التليفون مستخدم بالفعل في حجز آخر',
+        existing_booking: {
+          id: existingPhone.id,
+          patient_name: existingPhone.patient_name
+        }
+      });
     }
 
     const { data: doctorType, error: typeError } = await supabase
@@ -727,12 +748,14 @@ app.post('/api/bookings', async (req, res) => {
       return res.status(404).json({ error: 'الموعد غير موجود' });
     }
 
+    // ✅ التحقق من أن الوقت المطلوب متاح
     if (booking_time < customSlot.from_time || booking_time >= customSlot.to_time) {
       return res.status(400).json({ 
         error: `الوقت غير متاح. الفترة المتاحة: ${customSlot.from_time} - ${customSlot.to_time}` 
       });
     }
 
+    // ✅ التحقق من عدد الحجوزات (السعة)
     const { data: bookingsCount, error: countError } = await supabase
       .from('bookings')
       .select('id', { count: 'exact', head: true })
@@ -856,7 +879,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Supabase: ${supabaseUrl ? '✅ Connected' : '❌ Not connected'}`);
   console.log(`🔐 JWT: ${jwtSecret ? '✅ Configured' : '❌ Missing'}`);
-  console.log(`📦 Version: 3.0.0 (Token فقط في تسجيل الدخول)`);
+  console.log(`📦 Version: 3.0.0 (مع منع تكرار رقم التليفون)`);
 });
 
 module.exports = app;
