@@ -29,7 +29,7 @@ app.get('/', (req, res) => {
   res.json({
     message: '🚀 Clinic API is running!',
     supabase_connected: !!supabaseUrl && !!supabaseKey,
-    version: '3.0.0'
+    version: '3.0.1'
   });
 });
 
@@ -137,12 +137,12 @@ app.get('/api/departments', async (req, res) => {
       const formattedTypes = await Promise.all(types.map(async (dt) => {
         const slotsWithBookings = await Promise.all((dt.custom_slots || []).map(async (slot) => {
           // حساب عدد الحجوزات في هذه الفترة
-          const { data: bookings, error: countError } = await supabase
+          const { count, error: countError } = await supabase
             .from('bookings')
             .select('id', { count: 'exact', head: true })
             .eq('custom_slot_id', slot.id);
 
-          const currentBookings = bookings?.length || 0;
+          const currentBookings = count || 0;
 
           return {
             ...slot,
@@ -221,12 +221,12 @@ app.get('/api/departments/:id', async (req, res) => {
     const formattedTypes = await Promise.all((doctorTypes || []).map(async (dt) => {
       const slotsWithBookings = await Promise.all((dt.custom_slots || []).map(async (slot) => {
         // حساب عدد الحجوزات في هذه الفترة
-        const { data: bookings, error: countError } = await supabase
+        const { count, error: countError } = await supabase
           .from('bookings')
           .select('id', { count: 'exact', head: true })
           .eq('custom_slot_id', slot.id);
 
-        const currentBookings = bookings?.length || 0;
+        const currentBookings = count || 0;
 
         return {
           ...slot,
@@ -512,12 +512,12 @@ app.get('/api/departments/:departmentId/doctor-types/:type/custom-slots', async 
     // ✅ حساب current_bookings لكل فترة من جدول bookings
     const formattedSlots = await Promise.all((slots || []).map(async (slot) => {
       // حساب عدد الحجوزات في هذه الفترة
-      const { data: bookings, error: countError } = await supabase
+      const { count, error: countError } = await supabase
         .from('bookings')
         .select('id', { count: 'exact', head: true })
         .eq('custom_slot_id', slot.id);
 
-      const currentBookings = bookings?.length || 0;
+      const currentBookings = count || 0;
 
       return {
         id: slot.id,
@@ -582,12 +582,12 @@ app.get('/api/departments/:departmentId/doctor-types/:type/slots', async (req, r
 
     // ✅ حساب current_bookings لكل فترة
     const formattedSlots = await Promise.all((slots || []).map(async (slot) => {
-      const { data: bookings, error: countError } = await supabase
+      const { count, error: countError } = await supabase
         .from('bookings')
         .select('id', { count: 'exact', head: true })
         .eq('custom_slot_id', slot.id);
 
-      const currentBookings = bookings?.length || 0;
+      const currentBookings = count || 0;
 
       return {
         id: slot.id,
@@ -699,12 +699,12 @@ app.put('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId'
     if (!data) return res.status(404).json({ error: 'الفترة غير موجودة' });
 
     // ✅ حساب current_bookings
-    const { data: bookings, error: countError } = await supabase
+    const { count, error: countError } = await supabase
       .from('bookings')
       .select('id', { count: 'exact', head: true })
       .eq('custom_slot_id', data.id);
 
-    const currentBookings = bookings?.length || 0;
+    const currentBookings = count || 0;
 
     res.json({
       message: 'تم تحديث الفترة بنجاح',
@@ -750,12 +750,12 @@ app.patch('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotI
     }
 
     // حساب current_bookings الحالية
-    const { data: bookings, error: countError } = await supabase
+    const { count, error: countError } = await supabase
       .from('bookings')
       .select('id', { count: 'exact', head: true })
       .eq('custom_slot_id', slotId);
 
-    const currentBookings = bookings?.length || 0;
+    const currentBookings = count || 0;
 
     if (capacity < currentBookings) {
       return res.status(400).json({ 
@@ -930,12 +930,12 @@ app.put('/api/departments/:id/save', async (req, res) => {
     // ✅ حساب current_bookings لكل فترة
     const doctorTypesWithBookings = await Promise.all((updatedDepartment.doctor_types || []).map(async (dt) => {
       const slotsWithBookings = await Promise.all((dt.custom_slots || []).map(async (slot) => {
-        const { data: bookings, error: countError } = await supabase
+        const { count, error: countError } = await supabase
           .from('bookings')
           .select('id', { count: 'exact', head: true })
           .eq('custom_slot_id', slot.id);
 
-        const currentBookings = bookings?.length || 0;
+        const currentBookings = count || 0;
 
         return {
           ...slot,
@@ -998,7 +998,7 @@ app.post('/api/bookings', async (req, res) => {
     // ✅ 3. التحقق من عدم وجود رقم تليفون مكرر
     const { data: existingPhone, error: phoneError } = await supabase
       .from('bookings')
-      .select('id, patient_phone, patient_name')
+      .select('id, patient_name')
       .eq('patient_phone', patient_phone)
       .maybeSingle();
 
@@ -1040,14 +1040,14 @@ app.post('/api/bookings', async (req, res) => {
     }
 
     // ✅ 6. حساب عدد الحجوزات الحالية
-    const { data: currentBookings, error: countError } = await supabase
+    const { count, error: countError } = await supabase
       .from('bookings')
       .select('id', { count: 'exact', head: true })
       .eq('custom_slot_id', slot_id);
 
     if (countError) throw countError;
 
-    const currentCount = currentBookings?.length || 0;
+    const currentCount = count || 0;
 
     // ✅ 7. التحقق من السعة
     if (currentCount >= customSlot.capacity) {
@@ -1088,17 +1088,18 @@ app.post('/api/bookings', async (req, res) => {
     if (bookingError) throw bookingError;
 
     // ✅ 9. حساب عدد الحجوزات الجديد
-    const { data: updatedBookings, error: newCountError } = await supabase
+    const { count: updatedCount, error: newCountError } = await supabase
       .from('bookings')
       .select('id', { count: 'exact', head: true })
       .eq('custom_slot_id', slot_id);
 
     if (newCountError) throw newCountError;
 
-    const newCount = updatedBookings?.length || 0;
+    const newCount = updatedCount || 0;
 
     res.status(201).json({
-      ...booking,
+      success: true,
+      booking: booking,
       capacity: customSlot.capacity,
       current_bookings: newCount,
       remaining: customSlot.capacity - newCount
@@ -1149,13 +1150,13 @@ app.get('/api/bookings/all', async (req, res) => {
       // حساب current_bookings لهذه الفترة
       let currentBookings = 0;
       if (booking.custom_slots?.id) {
-        const { data: bookings, error: countError } = await supabase
+        const { count, error: countError } = await supabase
           .from('bookings')
           .select('id', { count: 'exact', head: true })
           .eq('custom_slot_id', booking.custom_slots.id);
         
         if (!countError) {
-          currentBookings = bookings?.length || 0;
+          currentBookings = count || 0;
         }
       }
 
@@ -1240,13 +1241,13 @@ app.get('/api/admin/bookings', async (req, res) => {
       // حساب current_bookings لهذه الفترة
       let currentBookings = 0;
       if (booking.custom_slots?.id) {
-        const { data: bookings, error: countError } = await supabase
+        const { count, error: countError } = await supabase
           .from('bookings')
           .select('id', { count: 'exact', head: true })
           .eq('custom_slot_id', booking.custom_slots.id);
         
         if (!countError) {
-          currentBookings = bookings?.length || 0;
+          currentBookings = count || 0;
         }
       }
 
@@ -1337,13 +1338,13 @@ app.get('/api/bookings/department/:departmentId', async (req, res) => {
     const formattedData = await Promise.all((data || []).map(async (booking) => {
       let currentBookings = 0;
       if (booking.custom_slots?.id) {
-        const { data: bookings, error: countError } = await supabase
+        const { count, error: countError } = await supabase
           .from('bookings')
           .select('id', { count: 'exact', head: true })
           .eq('custom_slot_id', booking.custom_slots.id);
         
         if (!countError) {
-          currentBookings = bookings?.length || 0;
+          currentBookings = count || 0;
         }
       }
 
@@ -1437,7 +1438,7 @@ app.delete('/api/bookings/:id', async (req, res) => {
     console.log('✅ Booking deleted');
 
     // ✅ 4. حساب عدد الحجوزات المتبقية
-    const { data: remainingBookings, error: countError } = await supabase
+    const { count, error: countError } = await supabase
       .from('bookings')
       .select('id', { count: 'exact', head: true })
       .eq('custom_slot_id', customSlot.id);
@@ -1447,7 +1448,7 @@ app.delete('/api/bookings/:id', async (req, res) => {
       throw countError;
     }
 
-    const newCurrentBookings = remainingBookings?.length || 0;
+    const newCurrentBookings = count || 0;
     console.log('New current_bookings from count:', newCurrentBookings);
 
     res.json({
@@ -1472,7 +1473,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Supabase: ${supabaseUrl ? '✅ Connected' : '❌ Not connected'}`);
   console.log(`🔐 JWT: ${jwtSecret ? '✅ Configured' : '❌ Missing'}`);
-  console.log(`📦 Version: 3.0.0 (مع نظام Capacity الديناميكي النهائي)`);
+  console.log(`📦 Version: 3.0.1 (تم إصلاح نظام الـ Capacity)`);
 });
 
 module.exports = app;
