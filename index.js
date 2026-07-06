@@ -1,4 +1,4 @@
- const express = require('express');
+const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const jwt = require('jsonwebtoken');
@@ -71,8 +71,8 @@ app.post('/api/admin/login', async (req, res) => {
 
     // ✅ إنشاء Token
     const token = jwt.sign(
-      { 
-        id: data.id, 
+      {
+        id: data.id,
         email: data.email,
         role: 'admin'
       },
@@ -106,7 +106,7 @@ app.post('/api/admin/login', async (req, res) => {
 app.get('/api/departments', async (req, res) => {
   try {
     console.log('📡 GET /api/departments');
-    
+
     const { data: departments, error: deptError } = await supabase
       .from('departments')
       .select('*')
@@ -132,7 +132,7 @@ app.get('/api/departments', async (req, res) => {
 
     const result = departments.map(dept => {
       const types = doctorTypes.filter(dt => dt.department_id === dept.id);
-      
+
       const formattedTypes = types.map(dt => ({
         ...dt,
         custom_slots: (dt.custom_slots || []).map(slot => ({
@@ -146,7 +146,7 @@ app.get('/api/departments', async (req, res) => {
           remaining: Math.max(0, (slot.capacity || 0) - (slot.current_bookings || 0))
         }))
       }));
-      
+
       return {
         ...dept,
         doctor_types: formattedTypes
@@ -217,10 +217,10 @@ app.get('/api/departments/:id', async (req, res) => {
     }));
 
     department.doctor_types = formattedTypes;
-    
+
     console.log('✅ Department found:', department.name);
     console.log('✅ Doctor types:', formattedTypes.length);
-    
+
     res.json(department);
   } catch (error) {
     console.error('❌ Server error:', error);
@@ -250,9 +250,9 @@ app.post('/api/departments', async (req, res) => {
 
     const { data: department, error: deptError } = await supabase
       .from('departments')
-      .insert([{ 
-        name, 
-        icon_url: icon_url || null, 
+      .insert([{
+        name,
+        icon_url: icon_url || null,
         order: nextOrder,
         created_at: new Date(),
         updated_at: new Date()
@@ -684,7 +684,7 @@ app.patch('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotI
     }
 
     if (capacity < currentSlot.current_bookings) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: `لا يمكن تقليل السعة إلى أقل من عدد الحجوزات الحالية (${currentSlot.current_bookings})`,
         current_bookings: currentSlot.current_bookings,
         requested_capacity: capacity
@@ -906,7 +906,7 @@ app.post('/api/bookings', async (req, res) => {
     if (phoneError) throw phoneError;
 
     if (existingPhone) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'رقم التليفون مستخدم بالفعل في حجز آخر',
         existing_booking: {
           id: existingPhone.id,
@@ -940,7 +940,7 @@ app.post('/api/bookings', async (req, res) => {
 
     // ✅ التحقق من عدد الحجوزات (السعة) - نظام ديناميكي
     if ((customSlot.current_bookings || 0) >= customSlot.capacity) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'الموعد مكتمل، لا توجد أماكن متاحة',
         capacity: customSlot.capacity,
         current_bookings: customSlot.current_bookings,
@@ -976,21 +976,24 @@ app.post('/api/bookings', async (req, res) => {
 
     if (bookingError) throw bookingError;
 
-    // ✅ زيادة current_bookings في custom_slots (ديناميكي)
-    const newCurrentBookings = (customSlot.current_bookings || 0) + 1;
-    
-    const { error: updateError } = await supabase
+    // ✅ حساب current_bookings الجديد من عدد الحجوزات الفعلي
+    const { data: updatedBookings, error: countError } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('custom_slot_id', slot_id);
+
+    if (countError) throw countError;
+
+    const newCurrentBookings = updatedBookings?.length || 0;
+
+    // ✅ تحديث current_bookings
+    await supabase
       .from('custom_slots')
-      .update({ 
+      .update({
         current_bookings: newCurrentBookings,
         updated_at: new Date()
       })
       .eq('id', slot_id);
-
-    if (updateError) {
-      console.error('❌ Update error:', updateError);
-      throw updateError;
-    }
 
     console.log('✅ Booking created. Current bookings:', newCurrentBookings);
 
@@ -1120,7 +1123,7 @@ app.get('/api/admin/bookings', async (req, res) => {
       const slotTo = booking.custom_slots?.to_time?.substring(0, 5) || null;
       const capacity = booking.custom_slots?.capacity || 0;
       const currentBookings = booking.custom_slots?.current_bookings || 0;
-      
+
       return {
         // ✅ بيانات المريض
         patient: {
@@ -1212,7 +1215,7 @@ app.get('/api/bookings/department/:departmentId', async (req, res) => {
       const slotTo = booking.custom_slots?.to_time?.substring(0, 5) || null;
       const capacity = booking.custom_slots?.capacity || 0;
       const currentBookings = booking.custom_slots?.current_bookings || 0;
-      
+
       return {
         id: booking.id,
         patient_name: booking.patient_name,
@@ -1255,7 +1258,7 @@ app.get('/api/bookings/department/:departmentId', async (req, res) => {
 
 /**
  * DELETE /api/bookings/:id
- * إلغاء حجز وتحديث current_bookings فقط (capacity ثابت)
+ * إلغاء حجز وتحديث current_bookings (نظام ديناميكي)
  */
 app.delete('/api/bookings/:id', async (req, res) => {
   try {
@@ -1288,7 +1291,7 @@ app.delete('/api/bookings/:id', async (req, res) => {
       return res.status(404).json({ error: 'الموعد غير موجود' });
     }
 
-    console.log('✅ Slot found, capacity:', customSlot.capacity, 'current_bookings:', customSlot.current_bookings);
+    console.log('Before - capacity:', customSlot.capacity, 'current_bookings:', customSlot.current_bookings);
 
     // ✅ 3. حذف الحجز
     const { error: deleteError } = await supabase
@@ -1303,12 +1306,25 @@ app.delete('/api/bookings/:id', async (req, res) => {
 
     console.log('✅ Booking deleted');
 
-    // ✅ 4. تحديث current_bookings فقط (capacity ثابت)
-    const newCurrentBookings = Math.max(0, (customSlot.current_bookings || 0) - 1);
-    
+    // ✅ 4. حساب current_bookings الجديد من عدد الحجوزات الفعلي
+    const { data: remainingBookings, error: countError } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('custom_slot_id', customSlot.id);
+
+    if (countError) {
+      console.error('❌ Count error:', countError);
+      throw countError;
+    }
+
+    const newCurrentBookings = remainingBookings?.length || 0;
+
+    console.log('New current_bookings from count:', newCurrentBookings);
+
+    // ✅ 5. تحديث current_bookings
     const { data: updatedSlot, error: updateError } = await supabase
       .from('custom_slots')
-      .update({ 
+      .update({
         current_bookings: newCurrentBookings,
         updated_at: new Date()
       })
@@ -1321,13 +1337,13 @@ app.delete('/api/bookings/:id', async (req, res) => {
       throw updateError;
     }
 
-    console.log('✅ Updated current_bookings to:', newCurrentBookings);
+    console.log('After - capacity:', updatedSlot.capacity, 'current_bookings:', updatedSlot.current_bookings);
 
-    res.json({ 
+    res.json({
       message: 'تم إلغاء الحجز وتحديث السعة بنجاح',
       slot_id: updatedSlot.id,
-      capacity: updatedSlot.capacity,              // ✅ ثابت لا يتغير
-      current_bookings: updatedSlot.current_bookings, // ✅ المتغير
+      capacity: updatedSlot.capacity,
+      current_bookings: updatedSlot.current_bookings,
       remaining: updatedSlot.capacity - updatedSlot.current_bookings
     });
   } catch (error) {
