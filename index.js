@@ -1,6 +1,7 @@
  const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const app = express();
@@ -8,9 +9,13 @@ const app = express();
 // ===== التحقق من متغيرات البيئة =====
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
+const jwtSecret = process.env.JWT_SECRET;
 
 if (!supabaseUrl || !supabaseKey) {
-  console.error('❌ SUPABASE_URL أو SUPABASE_KEY غير موجودة في متغيرات البيئة!');
+  console.error('❌ SUPABASE_URL أو SUPABASE_KEY غير موجودة!');
+}
+if (!jwtSecret) {
+  console.error('❌ JWT_SECRET غير موجودة!');
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -18,6 +23,29 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // ===== Middleware =====
 app.use(cors());
 app.use(express.json());
+
+// ===== Middleware: التحقق من Token =====
+const verifyToken = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader) {
+    return res.status(401).json({ error: 'لم يتم توفير التوكن' });
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'تنسيق التوكن غير صحيح' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, jwtSecret);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    return res.status(403).json({ error: 'توكن غير صالح أو منتهي الصلاحية' });
+  }
+};
 
 // ===== Test Route =====
 app.get('/', (req, res) => {
@@ -38,12 +66,12 @@ app.get('/api/health', (req, res) => {
 });
 
 // ============================
-// 1. تسجيل الدخول (Admin Login)
+// 1. تسجيل الدخول (Admin Login) مع Token
 // ============================
 
 /**
  * POST /api/admin/login
- * تسجيل دخول الأدمن
+ * تسجيل دخول الأدمن وإرجاع Token
  */
 app.post('/api/admin/login', async (req, res) => {
   try {
@@ -64,10 +92,25 @@ app.post('/api/admin/login', async (req, res) => {
       return res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
     }
 
+    // ✅ إنشاء Token
+    const token = jwt.sign(
+      { 
+        id: data.id, 
+        email: data.email,
+        role: 'admin'
+      },
+      jwtSecret,
+      { expiresIn: '7d' }
+    );
+
     res.json({
       success: true,
       message: 'تم تسجيل الدخول بنجاح',
-      admin: { email: data.email }
+      token: token,
+      admin: {
+        id: data.id,
+        email: data.email
+      }
     });
   } catch (error) {
     console.error('❌ Server error:', error);
@@ -81,7 +124,7 @@ app.post('/api/admin/login', async (req, res) => {
 
 /**
  * GET /api/departments
- * جلب كل الأقسام مع أنواع الأطباء
+ * جلب كل الأقسام (غير محمي)
  */
 app.get('/api/departments', async (req, res) => {
   try {
@@ -128,7 +171,7 @@ app.get('/api/departments', async (req, res) => {
 
 /**
  * GET /api/departments/:id
- * جلب تفاصيل قسم معين مع الفترات المخصصة فقط
+ * جلب تفاصيل قسم معين (غير محمي)
  */
 app.get('/api/departments/:id', async (req, res) => {
   try {
@@ -180,9 +223,9 @@ app.get('/api/departments/:id', async (req, res) => {
 
 /**
  * POST /api/departments
- * إضافة قسم جديد مع أنواع الأطباء
+ * إضافة قسم جديد (محمي - يحتاج Token)
  */
-app.post('/api/departments', async (req, res) => {
+app.post('/api/departments', verifyToken, async (req, res) => {
   try {
     const { name, icon_url, doctor_types } = req.body;
 
@@ -252,9 +295,9 @@ app.post('/api/departments', async (req, res) => {
 
 /**
  * PUT /api/departments/:id
- * تحديث بيانات القسم
+ * تعديل بيانات القسم (محمي)
  */
-app.put('/api/departments/:id', async (req, res) => {
+app.put('/api/departments/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, icon_url } = req.body;
@@ -288,9 +331,9 @@ app.put('/api/departments/:id', async (req, res) => {
 
 /**
  * DELETE /api/departments/:id
- * حذف قسم
+ * حذف قسم (محمي)
  */
-app.delete('/api/departments/:id', async (req, res) => {
+app.delete('/api/departments/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -313,9 +356,9 @@ app.delete('/api/departments/:id', async (req, res) => {
 
 /**
  * PUT /api/departments/reorder
- * إعادة ترتيب الأقسام
+ * إعادة ترتيب الأقسام (محمي)
  */
-app.put('/api/departments/reorder', async (req, res) => {
+app.put('/api/departments/reorder', verifyToken, async (req, res) => {
   try {
     const { ordered_ids } = req.body;
 
@@ -345,9 +388,9 @@ app.put('/api/departments/reorder', async (req, res) => {
 
 /**
  * PUT /api/departments/:id/doctor-types
- * تحديث أنواع الأطباء في القسم
+ * تحديث أنواع الأطباء (محمي)
  */
-app.put('/api/departments/:id/doctor-types', async (req, res) => {
+app.put('/api/departments/:id/doctor-types', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { doctor_types } = req.body;
@@ -390,12 +433,12 @@ app.put('/api/departments/:id/doctor-types', async (req, res) => {
 });
 
 // ============================
-// 4. الفترات المخصصة فقط (Custom Slots)
+// 4. الفترات المخصصة (Custom Slots)
 // ============================
 
 /**
  * GET /api/departments/:departmentId/doctor-types/:type/custom-slots
- * جلب الفترات المخصصة ليوم معين
+ * جلب الفترات المخصصة (غير محمي)
  */
 app.get('/api/departments/:departmentId/doctor-types/:type/custom-slots', async (req, res) => {
   try {
@@ -438,9 +481,9 @@ app.get('/api/departments/:departmentId/doctor-types/:type/custom-slots', async 
 
 /**
  * POST /api/departments/:departmentId/doctor-types/:type/custom-slots
- * إضافة فترة مخصصة
+ * إضافة فترة مخصصة (محمي)
  */
-app.post('/api/departments/:departmentId/doctor-types/:type/custom-slots', async (req, res) => {
+app.post('/api/departments/:departmentId/doctor-types/:type/custom-slots', verifyToken, async (req, res) => {
   try {
     const { departmentId, type } = req.params;
     const { date, capacity, from_time, to_time } = req.body;
@@ -485,9 +528,9 @@ app.post('/api/departments/:departmentId/doctor-types/:type/custom-slots', async
 
 /**
  * PUT /api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId
- * تعديل فترة مخصصة
+ * تعديل فترة مخصصة (محمي)
  */
-app.put('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId', async (req, res) => {
+app.put('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId', verifyToken, async (req, res) => {
   try {
     const { slotId } = req.params;
     const { capacity, from_time, to_time } = req.body;
@@ -516,9 +559,9 @@ app.put('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId'
 
 /**
  * DELETE /api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId
- * حذف فترة مخصصة
+ * حذف فترة مخصصة (محمي)
  */
-app.delete('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId', async (req, res) => {
+app.delete('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId', verifyToken, async (req, res) => {
   try {
     const { slotId } = req.params;
 
@@ -537,14 +580,14 @@ app.delete('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slot
 });
 
 // ============================
-// 5. حفظ كل التعديلات دفعة واحدة (Save)
+// 5. حفظ التعديلات (Save)
 // ============================
 
 /**
  * PUT /api/departments/:id/save
- * حفظ كل تعديلات القسم دفعة واحدة
+ * حفظ كل التعديلات (محمي)
  */
-app.put('/api/departments/:id/save', async (req, res) => {
+app.put('/api/departments/:id/save', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, icon_url, doctor_types } = req.body;
@@ -655,12 +698,12 @@ app.put('/api/departments/:id/save', async (req, res) => {
 });
 
 // ============================
-// 6. الحجوزات (Bookings) - تعتمد فقط على custom_slots
+// 6. الحجوزات (Bookings)
 // ============================
 
 /**
  * POST /api/bookings
- * إنشاء حجز جديد (يعتمد فقط على custom_slots)
+ * إنشاء حجز جديد (غير محمي - للمريض)
  */
 app.post('/api/bookings', async (req, res) => {
   try {
@@ -678,7 +721,6 @@ app.post('/api/bookings', async (req, res) => {
       return res.status(400).json({ error: 'جميع الحقول مطلوبة' });
     }
 
-    // جلب doctor_type_id
     const { data: doctorType, error: typeError } = await supabase
       .from('doctor_types')
       .select('id')
@@ -690,7 +732,6 @@ app.post('/api/bookings', async (req, res) => {
       return res.status(404).json({ error: 'نوع الطبيب غير موجود' });
     }
 
-    // التحقق من وجود الفترة في custom_slots فقط
     const { data: customSlot, error: customError } = await supabase
       .from('custom_slots')
       .select('id, capacity')
@@ -703,7 +744,6 @@ app.post('/api/bookings', async (req, res) => {
       return res.status(404).json({ error: 'الموعد غير موجود' });
     }
 
-    // إنشاء الحجز
     const bookingData = {
       department_id,
       doctor_type_id: doctorType.id,
@@ -733,9 +773,9 @@ app.post('/api/bookings', async (req, res) => {
 
 /**
  * GET /api/bookings/all
- * جلب كل الحجوزات
+ * جلب كل الحجوزات (محمي - للأدمن فقط)
  */
-app.get('/api/bookings/all', async (req, res) => {
+app.get('/api/bookings/all', verifyToken, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('bookings')
@@ -758,9 +798,9 @@ app.get('/api/bookings/all', async (req, res) => {
 
 /**
  * GET /api/bookings/department/:departmentId
- * جلب حجوزات قسم معين
+ * جلب حجوزات قسم معين (محمي - للأدمن فقط)
  */
-app.get('/api/bookings/department/:departmentId', async (req, res) => {
+app.get('/api/bookings/department/:departmentId', verifyToken, async (req, res) => {
   try {
     const { departmentId } = req.params;
 
@@ -785,7 +825,7 @@ app.get('/api/bookings/department/:departmentId', async (req, res) => {
 
 /**
  * DELETE /api/bookings/:id
- * إلغاء حجز
+ * إلغاء حجز (غير محمي - للمريض)
  */
 app.delete('/api/bookings/:id', async (req, res) => {
   try {
@@ -813,7 +853,8 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Supabase: ${supabaseUrl ? '✅ Connected' : '❌ Not connected'}`);
-  console.log(`📦 Version: 3.0.0 (بدون فترات ثابتة)`);
+  console.log(`🔐 JWT: ${jwtSecret ? '✅ Configured' : '❌ Missing'}`);
+  console.log(`📦 Version: 3.0.0 (مع Token)`);
 });
 
 module.exports = app;
