@@ -24,29 +24,6 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 app.use(cors());
 app.use(express.json());
 
-// ===== Middleware: التحقق من Token =====
-const verifyToken = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  
-  if (!authHeader) {
-    return res.status(401).json({ error: 'لم يتم توفير التوكن' });
-  }
-
-  const token = authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ error: 'تنسيق التوكن غير صحيح' });
-  }
-
-  try {
-    const decoded = jwt.verify(token, jwtSecret);
-    req.user = decoded;
-    next();
-  } catch (error) {
-    return res.status(403).json({ error: 'توكن غير صالح أو منتهي الصلاحية' });
-  }
-};
-
 // ===== Test Route =====
 app.get('/', (req, res) => {
   res.json({
@@ -119,12 +96,12 @@ app.post('/api/admin/login', async (req, res) => {
 });
 
 // ============================
-// 2. الأقسام (Departments)
+// 2. الأقسام (Departments) - بدون حماية
 // ============================
 
 /**
  * GET /api/departments
- * جلب كل الأقسام (غير محمي)
+ * جلب كل الأقسام
  */
 app.get('/api/departments', async (req, res) => {
   try {
@@ -171,7 +148,7 @@ app.get('/api/departments', async (req, res) => {
 
 /**
  * GET /api/departments/:id
- * جلب تفاصيل قسم معين (غير محمي)
+ * جلب تفاصيل قسم معين
  */
 app.get('/api/departments/:id', async (req, res) => {
   try {
@@ -223,9 +200,9 @@ app.get('/api/departments/:id', async (req, res) => {
 
 /**
  * POST /api/departments
- * إضافة قسم جديد (محمي - يحتاج Token)
+ * إضافة قسم جديد
  */
-app.post('/api/departments', verifyToken, async (req, res) => {
+app.post('/api/departments', async (req, res) => {
   try {
     const { name, icon_url, doctor_types } = req.body;
 
@@ -295,9 +272,9 @@ app.post('/api/departments', verifyToken, async (req, res) => {
 
 /**
  * PUT /api/departments/:id
- * تعديل بيانات القسم (محمي)
+ * تعديل بيانات القسم
  */
-app.put('/api/departments/:id', verifyToken, async (req, res) => {
+app.put('/api/departments/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { name, icon_url } = req.body;
@@ -331,9 +308,9 @@ app.put('/api/departments/:id', verifyToken, async (req, res) => {
 
 /**
  * DELETE /api/departments/:id
- * حذف قسم (محمي)
+ * حذف قسم
  */
-app.delete('/api/departments/:id', verifyToken, async (req, res) => {
+app.delete('/api/departments/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -356,9 +333,9 @@ app.delete('/api/departments/:id', verifyToken, async (req, res) => {
 
 /**
  * PUT /api/departments/reorder
- * إعادة ترتيب الأقسام (محمي)
+ * إعادة ترتيب الأقسام
  */
-app.put('/api/departments/reorder', verifyToken, async (req, res) => {
+app.put('/api/departments/reorder', async (req, res) => {
   try {
     const { ordered_ids } = req.body;
 
@@ -383,14 +360,14 @@ app.put('/api/departments/reorder', verifyToken, async (req, res) => {
 });
 
 // ============================
-// 3. أنواع الأطباء (Doctor Types)
+// 3. أنواع الأطباء (Doctor Types) - بدون حماية
 // ============================
 
 /**
  * PUT /api/departments/:id/doctor-types
- * تحديث أنواع الأطباء (محمي)
+ * تحديث أنواع الأطباء
  */
-app.put('/api/departments/:id/doctor-types', verifyToken, async (req, res) => {
+app.put('/api/departments/:id/doctor-types', async (req, res) => {
   try {
     const { id } = req.params;
     const { doctor_types } = req.body;
@@ -433,12 +410,12 @@ app.put('/api/departments/:id/doctor-types', verifyToken, async (req, res) => {
 });
 
 // ============================
-// 4. الفترات المخصصة (Custom Slots)
+// 4. الفترات المخصصة (Custom Slots) - بدون حماية
 // ============================
 
 /**
  * GET /api/departments/:departmentId/doctor-types/:type/custom-slots
- * جلب الفترات المخصصة (غير محمي)
+ * جلب الفترات المخصصة
  */
 app.get('/api/departments/:departmentId/doctor-types/:type/custom-slots', async (req, res) => {
   try {
@@ -481,9 +458,9 @@ app.get('/api/departments/:departmentId/doctor-types/:type/custom-slots', async 
 
 /**
  * POST /api/departments/:departmentId/doctor-types/:type/custom-slots
- * إضافة فترة مخصصة (محمي)
+ * إضافة فترة مخصصة
  */
-app.post('/api/departments/:departmentId/doctor-types/:type/custom-slots', verifyToken, async (req, res) => {
+app.post('/api/departments/:departmentId/doctor-types/:type/custom-slots', async (req, res) => {
   try {
     const { departmentId, type } = req.params;
     const { date, capacity, from_time, to_time } = req.body;
@@ -528,9 +505,9 @@ app.post('/api/departments/:departmentId/doctor-types/:type/custom-slots', verif
 
 /**
  * PUT /api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId
- * تعديل فترة مخصصة (محمي)
+ * تعديل فترة مخصصة
  */
-app.put('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId', verifyToken, async (req, res) => {
+app.put('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId', async (req, res) => {
   try {
     const { slotId } = req.params;
     const { capacity, from_time, to_time } = req.body;
@@ -559,9 +536,9 @@ app.put('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId'
 
 /**
  * DELETE /api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId
- * حذف فترة مخصصة (محمي)
+ * حذف فترة مخصصة
  */
-app.delete('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId', verifyToken, async (req, res) => {
+app.delete('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId', async (req, res) => {
   try {
     const { slotId } = req.params;
 
@@ -580,14 +557,14 @@ app.delete('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slot
 });
 
 // ============================
-// 5. حفظ التعديلات (Save)
+// 5. حفظ التعديلات (Save) - بدون حماية
 // ============================
 
 /**
  * PUT /api/departments/:id/save
- * حفظ كل التعديلات (محمي)
+ * حفظ كل التعديلات
  */
-app.put('/api/departments/:id/save', verifyToken, async (req, res) => {
+app.put('/api/departments/:id/save', async (req, res) => {
   try {
     const { id } = req.params;
     const { name, icon_url, doctor_types } = req.body;
@@ -698,12 +675,12 @@ app.put('/api/departments/:id/save', verifyToken, async (req, res) => {
 });
 
 // ============================
-// 6. الحجوزات (Bookings)
+// 6. الحجوزات (Bookings) - بدون حماية
 // ============================
 
 /**
  * POST /api/bookings
- * إنشاء حجز جديد (غير محمي - للمريض)
+ * إنشاء حجز جديد
  */
 app.post('/api/bookings', async (req, res) => {
   try {
@@ -712,13 +689,19 @@ app.post('/api/bookings', async (req, res) => {
       doctor_type,
       slot_id,
       booking_date,
+      booking_time,
       patient_name,
       patient_age,
-      patient_phone
+      patient_phone,
+      patient_gender
     } = req.body;
 
-    if (!department_id || !doctor_type || !slot_id || !booking_date || !patient_name || !patient_age || !patient_phone) {
+    if (!department_id || !doctor_type || !slot_id || !booking_date || !booking_time || !patient_name || !patient_age || !patient_phone || !patient_gender) {
       return res.status(400).json({ error: 'جميع الحقول مطلوبة' });
+    }
+
+    if (!['male', 'female'].includes(patient_gender)) {
+      return res.status(400).json({ error: 'الجنس يجب أن يكون male أو female' });
     }
 
     const { data: doctorType, error: typeError } = await supabase
@@ -734,7 +717,7 @@ app.post('/api/bookings', async (req, res) => {
 
     const { data: customSlot, error: customError } = await supabase
       .from('custom_slots')
-      .select('id, capacity')
+      .select('id, capacity, from_time, to_time')
       .eq('id', slot_id)
       .eq('doctor_type_id', doctorType.id)
       .eq('date', booking_date)
@@ -744,14 +727,33 @@ app.post('/api/bookings', async (req, res) => {
       return res.status(404).json({ error: 'الموعد غير موجود' });
     }
 
+    if (booking_time < customSlot.from_time || booking_time >= customSlot.to_time) {
+      return res.status(400).json({ 
+        error: `الوقت غير متاح. الفترة المتاحة: ${customSlot.from_time} - ${customSlot.to_time}` 
+      });
+    }
+
+    const { data: bookingsCount, error: countError } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('custom_slot_id', slot_id);
+
+    if (countError) throw countError;
+
+    if (bookingsCount >= customSlot.capacity) {
+      return res.status(400).json({ error: 'الموعد مكتمل، لا توجد أماكن متاحة' });
+    }
+
     const bookingData = {
       department_id,
       doctor_type_id: doctorType.id,
       custom_slot_id: slot_id,
       booking_date,
+      booking_time,
       patient_name,
       patient_age,
       patient_phone,
+      patient_gender,
       created_at: new Date(),
       updated_at: new Date()
     };
@@ -773,9 +775,9 @@ app.post('/api/bookings', async (req, res) => {
 
 /**
  * GET /api/bookings/all
- * جلب كل الحجوزات (محمي - للأدمن فقط)
+ * جلب كل الحجوزات
  */
-app.get('/api/bookings/all', verifyToken, async (req, res) => {
+app.get('/api/bookings/all', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('bookings')
@@ -798,9 +800,9 @@ app.get('/api/bookings/all', verifyToken, async (req, res) => {
 
 /**
  * GET /api/bookings/department/:departmentId
- * جلب حجوزات قسم معين (محمي - للأدمن فقط)
+ * جلب حجوزات قسم معين
  */
-app.get('/api/bookings/department/:departmentId', verifyToken, async (req, res) => {
+app.get('/api/bookings/department/:departmentId', async (req, res) => {
   try {
     const { departmentId } = req.params;
 
@@ -825,7 +827,7 @@ app.get('/api/bookings/department/:departmentId', verifyToken, async (req, res) 
 
 /**
  * DELETE /api/bookings/:id
- * إلغاء حجز (غير محمي - للمريض)
+ * إلغاء حجز
  */
 app.delete('/api/bookings/:id', async (req, res) => {
   try {
@@ -854,7 +856,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Supabase: ${supabaseUrl ? '✅ Connected' : '❌ Not connected'}`);
   console.log(`🔐 JWT: ${jwtSecret ? '✅ Configured' : '❌ Missing'}`);
-  console.log(`📦 Version: 3.0.0 (مع Token)`);
+  console.log(`📦 Version: 3.0.0 (Token فقط في تسجيل الدخول)`);
 });
 
 module.exports = app;
