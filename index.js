@@ -1412,17 +1412,12 @@ app.delete('/api/bookings/:id', async (req, res) => {
 
     console.log('✅ Booking found, custom_slot_id:', booking.custom_slot_id);
 
-    // ✅ 2. جلب الـ custom_slot الحالي
-    const { data: customSlot, error: slotError } = await supabase
+    // ✅ 2. جلب الـ custom_slot الحالي (اختياري لتحديث السعة)
+    const { data: customSlot } = await supabase
       .from('custom_slots')
       .select('id, capacity')
       .eq('id', booking.custom_slot_id)
-      .single();
-
-    if (slotError || !customSlot) {
-      console.error('❌ Slot not found:', slotError);
-      return res.status(404).json({ error: 'الموعد غير موجود' });
-    }
+      .maybeSingle();
 
     // ✅ 3. حذف الحجز
     const { error: deleteError } = await supabase
@@ -1437,26 +1432,28 @@ app.delete('/api/bookings/:id', async (req, res) => {
 
     console.log('✅ Booking deleted');
 
-    // ✅ 4. حساب عدد الحجوزات المتبقية
-    const { count, error: countError } = await supabase
-      .from('bookings')
-      .select('id', { count: 'exact', head: true })
-      .eq('custom_slot_id', customSlot.id);
+    // ✅ 4. حساب عدد الحجوزات المتبقية (فقط إذا كان الموعد موجوداً)
+    let capacityInfo = {};
+    if (customSlot) {
+      const { count, error: countError } = await supabase
+        .from('bookings')
+        .select('id', { count: 'exact', head: true })
+        .eq('custom_slot_id', customSlot.id);
 
-    if (countError) {
-      console.error('❌ Count error:', countError);
-      throw countError;
+      if (!countError) {
+        const newCurrentBookings = count || 0;
+        capacityInfo = {
+          slot_id: customSlot.id,
+          capacity: customSlot.capacity,
+          current_bookings: newCurrentBookings,
+          remaining: customSlot.capacity - newCurrentBookings
+        };
+      }
     }
 
-    const newCurrentBookings = count || 0;
-    console.log('New current_bookings from count:', newCurrentBookings);
-
     res.json({
-      message: 'تم إلغاء الحجز وتحديث السعة بنجاح',
-      slot_id: customSlot.id,
-      capacity: customSlot.capacity,
-      current_bookings: newCurrentBookings,
-      remaining: customSlot.capacity - newCurrentBookings
+      message: 'تم إلغاء الحجز بنجاح',
+      ...capacityInfo
     });
   } catch (error) {
     console.error('❌ Server error:', error);
