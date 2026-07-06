@@ -1,4 +1,4 @@
-const express = require('express');
+ const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
@@ -19,21 +19,12 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 app.use(cors());
 app.use(express.json());
 
-// Error handling for JSON parsing
-app.use((err, req, res, next) => {
-  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-    console.error('❌ Bad JSON request:', err.message);
-    return res.status(400).json({ error: 'تنسيق JSON غير صحيح' });
-  }
-  next();
-});
-
 // ===== Test Route =====
 app.get('/', (req, res) => {
   res.json({
     message: '🚀 Clinic API is running!',
     supabase_connected: !!supabaseUrl && !!supabaseKey,
-    version: '3.0.1'
+    version: '3.0.0'
   });
 });
 
@@ -89,35 +80,6 @@ app.post('/api/admin/login', async (req, res) => {
 // ============================
 
 /**
- * PUT /api/departments/reorder
- * إعادة ترتيب الأقسام
- * ملاحظة: تم نقل هذا المسار قبل المسارات التي تحتوي على :id لتجنب التصادم
- */
-app.put('/api/departments/reorder', async (req, res) => {
-  try {
-    const { ordered_ids } = req.body;
-
-    if (!ordered_ids || !Array.isArray(ordered_ids)) {
-      return res.status(400).json({ error: 'ordered_ids مطلوب كمصفوفة' });
-    }
-
-    for (let i = 0; i < ordered_ids.length; i++) {
-      const { error } = await supabase
-        .from('departments')
-        .update({ order: i + 1, updated_at: new Date() })
-        .eq('id', ordered_ids[i]);
-
-      if (error) throw error;
-    }
-
-    res.json({ message: 'تم إعادة ترتيب الأقسام بنجاح' });
-  } catch (error) {
-    console.error('❌ Server error:', error);
-    res.status(500).json({ error: 'Server error: ' + error.message });
-  }
-});
-
-/**
  * GET /api/departments
  * جلب كل الأقسام مع أنواع الأطباء
  */
@@ -171,9 +133,6 @@ app.get('/api/departments', async (req, res) => {
 app.get('/api/departments/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    // التحقق من أن الـ id ليس كلمة محجوزة
-    if (id === 'reorder') return next();
-
     console.log('📡 GET /api/departments/:id', id);
 
     const { data: department, error: deptError } = await supabase
@@ -245,7 +204,8 @@ app.post('/api/departments', async (req, res) => {
         name, 
         icon_url: icon_url || null, 
         order: nextOrder,
-        created_at: new Date()
+        created_at: new Date(),
+        updated_at: new Date()
       }])
       .select()
       .single();
@@ -262,7 +222,8 @@ app.post('/api/departments', async (req, res) => {
         type: type.type,
         label: type.label || (type.type === 'male' ? 'دكتور' : 'دكتورة'),
         enabled: type.enabled !== undefined ? type.enabled : true,
-        created_at: new Date()
+        created_at: new Date(),
+        updated_at: new Date()
       }));
 
       const { data: types, error: typesError } = await supabase
@@ -296,14 +257,12 @@ app.post('/api/departments', async (req, res) => {
 app.put('/api/departments/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    if (id === 'reorder') return next();
-    
     const { name, icon_url } = req.body;
 
     const updateData = {};
     if (name) updateData.name = name;
     if (icon_url !== undefined) updateData.icon_url = icon_url;
-    // تم إزالة updated_at لتجنب الخطأ إذا كان العمود مفقوداً، أو يمكن إضافته يدوياً في Supabase
+    updateData.updated_at = new Date();
 
     const { data, error } = await supabase
       .from('departments')
@@ -352,6 +311,34 @@ app.delete('/api/departments/:id', async (req, res) => {
   }
 });
 
+/**
+ * PUT /api/departments/reorder
+ * إعادة ترتيب الأقسام
+ */
+app.put('/api/departments/reorder', async (req, res) => {
+  try {
+    const { ordered_ids } = req.body;
+
+    if (!ordered_ids || !Array.isArray(ordered_ids)) {
+      return res.status(400).json({ error: 'ordered_ids مطلوب كمصفوفة' });
+    }
+
+    for (let i = 0; i < ordered_ids.length; i++) {
+      const { error } = await supabase
+        .from('departments')
+        .update({ order: i + 1, updated_at: new Date() })
+        .eq('id', ordered_ids[i]);
+
+      if (error) throw error;
+    }
+
+    res.json({ message: 'تم إعادة ترتيب الأقسام بنجاح' });
+  } catch (error) {
+    console.error('❌ Server error:', error);
+    res.status(500).json({ error: 'Server error: ' + error.message });
+  }
+});
+
 // ============================
 // 3. أنواع الأطباء (Doctor Types)
 // ============================
@@ -376,7 +363,8 @@ app.put('/api/departments/:id/doctor-types', async (req, res) => {
           department_id: id,
           type: type.type,
           label: type.label || (type.type === 'male' ? 'دكتور' : 'دكتورة'),
-          enabled: type.enabled !== undefined ? type.enabled : true
+          enabled: type.enabled !== undefined ? type.enabled : true,
+          updated_at: new Date()
         }, {
           onConflict: 'department_id,type'
         });
@@ -480,7 +468,8 @@ app.post('/api/departments/:departmentId/doctor-types/:type/custom-slots', async
         capacity,
         from_time,
         to_time,
-        created_at: new Date()
+        created_at: new Date(),
+        updated_at: new Date()
       }])
       .select()
       .single();
@@ -508,7 +497,8 @@ app.put('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId'
       .update({
         capacity,
         from_time,
-        to_time
+        to_time,
+        updated_at: new Date()
       })
       .eq('id', slotId)
       .select()
@@ -563,6 +553,7 @@ app.put('/api/departments/:id/save', async (req, res) => {
       const updateData = {};
       if (name) updateData.name = name;
       if (icon_url !== undefined) updateData.icon_url = icon_url;
+      updateData.updated_at = new Date();
 
       const { error: deptError } = await supabase
         .from('departments')
@@ -589,7 +580,8 @@ app.put('/api/departments/:id/save', async (req, res) => {
               type: typeData.type,
               label: typeData.label || (typeData.type === 'male' ? 'دكتور' : 'دكتورة'),
               enabled: typeData.enabled !== undefined ? typeData.enabled : true,
-              created_at: new Date()
+              created_at: new Date(),
+              updated_at: new Date()
             }])
             .select()
             .single();
@@ -597,7 +589,7 @@ app.put('/api/departments/:id/save', async (req, res) => {
           if (createError) throw createError;
           doctorType = newType;
         } else {
-          const updateData = {};
+          const updateData = { updated_at: new Date() };
           if (typeData.enabled !== undefined) updateData.enabled = typeData.enabled;
           if (typeData.label) updateData.label = typeData.label;
 
@@ -628,7 +620,8 @@ app.put('/api/departments/:id/save', async (req, res) => {
                 capacity: slot.capacity,
                 from_time: slot.from_time,
                 to_time: slot.to_time,
-                created_at: new Date()
+                created_at: new Date(),
+                updated_at: new Date()
               }]);
 
             if (insertError) throw insertError;
@@ -719,7 +712,8 @@ app.post('/api/bookings', async (req, res) => {
       patient_name,
       patient_age,
       patient_phone,
-      created_at: new Date()
+      created_at: new Date(),
+      updated_at: new Date()
     };
 
     const { data: booking, error: bookingError } = await supabase
@@ -819,7 +813,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Supabase: ${supabaseUrl ? '✅ Connected' : '❌ Not connected'}`);
-  console.log(`📦 Version: 3.0.1 (Fixed Routing & Validation)`);
+  console.log(`📦 Version: 3.0.0 (بدون فترات ثابتة)`);
 });
 
 module.exports = app;
