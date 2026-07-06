@@ -29,7 +29,7 @@ app.get('/', (req, res) => {
   res.json({
     message: '🚀 Clinic API is running!',
     supabase_connected: !!supabaseUrl && !!supabaseKey,
-    version: '3.1.0'
+    version: '3.0.0'
   });
 });
 
@@ -130,31 +130,19 @@ app.get('/api/departments', async (req, res) => {
       return res.status(500).json({ error: typesError.message });
     }
 
-    // ✅ استخدام current_bookings من الجدول مباشرة مع تحديث في حالة الصفر
+    // ✅ حساب current_bookings لكل فترة
     const result = await Promise.all(departments.map(async (dept) => {
       const types = doctorTypes.filter(dt => dt.department_id === dept.id);
       
       const formattedTypes = await Promise.all(types.map(async (dt) => {
         const slotsWithBookings = await Promise.all((dt.custom_slots || []).map(async (slot) => {
-          // ✅ التأكد من أن current_bookings محدث
-          let currentBookings = slot.current_bookings || 0;
-          
-          // ✅ إذا كانت القيمة غير محدثة، نقوم بحسابها وتحديثها
-          if (currentBookings === 0 && slot.capacity > 0) {
-            const { data: bookings, error: countError } = await supabase
-              .from('bookings')
-              .select('id', { count: 'exact', head: true })
-              .eq('custom_slot_id', slot.id);
-            
-            if (!countError) {
-              currentBookings = bookings?.length || 0;
-              // تحديث القيمة في قاعدة البيانات
-              await supabase
-                .from('custom_slots')
-                .update({ current_bookings: currentBookings, updated_at: new Date() })
-                .eq('id', slot.id);
-            }
-          }
+          // حساب عدد الحجوزات في هذه الفترة
+          const { data: bookings, error: countError } = await supabase
+            .from('bookings')
+            .select('id', { count: 'exact', head: true })
+            .eq('custom_slot_id', slot.id);
+
+          const currentBookings = bookings?.length || 0;
 
           return {
             ...slot,
@@ -218,8 +206,7 @@ app.get('/api/departments/:id', async (req, res) => {
           date,
           capacity,
           from_time,
-          to_time,
-          current_bookings
+          to_time
         )
       `)
       .eq('department_id', id)
@@ -230,26 +217,16 @@ app.get('/api/departments/:id', async (req, res) => {
       return res.status(500).json({ error: typesError.message });
     }
 
-    // ✅ استخدام current_bookings من الجدول
+    // ✅ حساب current_bookings لكل فترة
     const formattedTypes = await Promise.all((doctorTypes || []).map(async (dt) => {
       const slotsWithBookings = await Promise.all((dt.custom_slots || []).map(async (slot) => {
-        let currentBookings = slot.current_bookings || 0;
-        
-        // ✅ تحديث إذا كانت القيمة غير صحيحة
-        if (currentBookings === 0 && slot.capacity > 0) {
-          const { data: bookings, error: countError } = await supabase
-            .from('bookings')
-            .select('id', { count: 'exact', head: true })
-            .eq('custom_slot_id', slot.id);
-          
-          if (!countError) {
-            currentBookings = bookings?.length || 0;
-            await supabase
-              .from('custom_slots')
-              .update({ current_bookings: currentBookings, updated_at: new Date() })
-              .eq('id', slot.id);
-          }
-        }
+        // حساب عدد الحجوزات في هذه الفترة
+        const { data: bookings, error: countError } = await supabase
+          .from('bookings')
+          .select('id', { count: 'exact', head: true })
+          .eq('custom_slot_id', slot.id);
+
+        const currentBookings = bookings?.length || 0;
 
         return {
           ...slot,
@@ -494,12 +471,12 @@ app.put('/api/departments/:id/doctor-types', async (req, res) => {
 });
 
 // ============================
-// 4. الفترات المخصصة (Custom Slots)
+// 4. الفترات المخصصة (Custom Slots) - مع حساب current_bookings
 // ============================
 
 /**
  * GET /api/departments/:departmentId/doctor-types/:type/custom-slots
- * جلب الفترات المخصصة مع current_bookings من الجدول
+ * جلب الفترات المخصصة مع current_bookings المحسوب
  */
 app.get('/api/departments/:departmentId/doctor-types/:type/custom-slots', async (req, res) => {
   try {
@@ -510,6 +487,7 @@ app.get('/api/departments/:departmentId/doctor-types/:type/custom-slots', async 
       return res.status(400).json({ error: 'التاريخ مطلوب' });
     }
 
+    // جلب doctor_type_id
     const { data: doctorType, error: typeError } = await supabase
       .from('doctor_types')
       .select('id')
@@ -521,6 +499,7 @@ app.get('/api/departments/:departmentId/doctor-types/:type/custom-slots', async 
       return res.status(404).json({ error: 'نوع الطبيب غير موجود' });
     }
 
+    // جلب الفترات
     const { data: slots, error: slotsError } = await supabase
       .from('custom_slots')
       .select('*')
@@ -530,25 +509,15 @@ app.get('/api/departments/:departmentId/doctor-types/:type/custom-slots', async 
 
     if (slotsError) throw slotsError;
 
-    // ✅ استخدام current_bookings من الجدول
+    // ✅ حساب current_bookings لكل فترة من جدول bookings
     const formattedSlots = await Promise.all((slots || []).map(async (slot) => {
-      let currentBookings = slot.current_bookings || 0;
-      
-      // ✅ تحديث إذا كانت القيمة غير صحيحة
-      if (currentBookings === 0 && slot.capacity > 0) {
-        const { data: bookings, error: countError } = await supabase
-          .from('bookings')
-          .select('id', { count: 'exact', head: true })
-          .eq('custom_slot_id', slot.id);
-        
-        if (!countError) {
-          currentBookings = bookings?.length || 0;
-          await supabase
-            .from('custom_slots')
-            .update({ current_bookings: currentBookings, updated_at: new Date() })
-            .eq('id', slot.id);
-        }
-      }
+      // حساب عدد الحجوزات في هذه الفترة
+      const { data: bookings, error: countError } = await supabase
+        .from('bookings')
+        .select('id', { count: 'exact', head: true })
+        .eq('custom_slot_id', slot.id);
+
+      const currentBookings = bookings?.length || 0;
 
       return {
         id: slot.id,
@@ -580,7 +549,7 @@ app.get('/api/departments/:departmentId/doctor-types/:type/custom-slots', async 
 
 /**
  * GET /api/departments/:departmentId/doctor-types/:type/slots
- * جلب الفترات المنسقة لنوع طبيب معين
+ * جلب الفترات المنسقة لنوع طبيب معين مع current_bookings المحسوب
  */
 app.get('/api/departments/:departmentId/doctor-types/:type/slots', async (req, res) => {
   try {
@@ -611,24 +580,14 @@ app.get('/api/departments/:departmentId/doctor-types/:type/slots', async (req, r
 
     if (slotsError) throw slotsError;
 
-    // ✅ استخدام current_bookings من الجدول
+    // ✅ حساب current_bookings لكل فترة
     const formattedSlots = await Promise.all((slots || []).map(async (slot) => {
-      let currentBookings = slot.current_bookings || 0;
-      
-      if (currentBookings === 0 && slot.capacity > 0) {
-        const { data: bookings, error: countError } = await supabase
-          .from('bookings')
-          .select('id', { count: 'exact', head: true })
-          .eq('custom_slot_id', slot.id);
-        
-        if (!countError) {
-          currentBookings = bookings?.length || 0;
-          await supabase
-            .from('custom_slots')
-            .update({ current_bookings: currentBookings, updated_at: new Date() })
-            .eq('id', slot.id);
-        }
-      }
+      const { data: bookings, error: countError } = await supabase
+        .from('bookings')
+        .select('id', { count: 'exact', head: true })
+        .eq('custom_slot_id', slot.id);
+
+      const currentBookings = bookings?.length || 0;
 
       return {
         id: slot.id,
@@ -689,7 +648,6 @@ app.post('/api/departments/:departmentId/doctor-types/:type/custom-slots', async
         capacity,
         from_time,
         to_time,
-        current_bookings: 0, // ✅ تهيئة بـ 0
         created_at: new Date(),
         updated_at: new Date()
       }])
@@ -714,10 +672,12 @@ app.put('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId'
     const { slotId } = req.params;
     const { capacity, from_time, to_time } = req.body;
 
+    // ✅ بناء كائن التحديث
     const updateData = {
       updated_at: new Date()
     };
 
+    // ✅ إضافة الحقول التي تم إرسالها فقط
     if (capacity !== undefined) {
       updateData.capacity = capacity;
     }
@@ -738,8 +698,13 @@ app.put('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotId'
     if (error) throw error;
     if (!data) return res.status(404).json({ error: 'الفترة غير موجودة' });
 
-    // ✅ استخدام current_bookings من الجدول
-    const currentBookings = data.current_bookings || 0;
+    // ✅ حساب current_bookings
+    const { data: bookings, error: countError } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('custom_slot_id', data.id);
+
+    const currentBookings = bookings?.length || 0;
 
     res.json({
       message: 'تم تحديث الفترة بنجاح',
@@ -773,9 +738,10 @@ app.patch('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotI
       return res.status(400).json({ error: 'السعة مطلوبة ويجب أن تكون أكبر من أو تساوي 0' });
     }
 
+    // ✅ التحقق من أن السعة الجديدة لا تقل عن current_bookings
     const { data: currentSlot, error: fetchError } = await supabase
       .from('custom_slots')
-      .select('id, capacity, date, from_time, to_time, current_bookings')
+      .select('id, capacity, date, from_time, to_time')
       .eq('id', slotId)
       .single();
 
@@ -783,7 +749,13 @@ app.patch('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotI
       return res.status(404).json({ error: 'الفترة غير موجودة' });
     }
 
-    const currentBookings = currentSlot.current_bookings || 0;
+    // حساب current_bookings الحالية
+    const { data: bookings, error: countError } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('custom_slot_id', slotId);
+
+    const currentBookings = bookings?.length || 0;
 
     if (capacity < currentBookings) {
       return res.status(400).json({ 
@@ -793,6 +765,7 @@ app.patch('/api/departments/:departmentId/doctor-types/:type/custom-slots/:slotI
       });
     }
 
+    // ✅ تحديث السعة فقط
     const { data, error } = await supabase
       .from('custom_slots')
       .update({
@@ -911,6 +884,7 @@ app.put('/api/departments/:id/save', async (req, res) => {
           if (updateError) throw updateError;
         }
 
+        // حذف الفترات المخصصة القديمة
         const { error: deleteCustomError } = await supabase
           .from('custom_slots')
           .delete()
@@ -918,6 +892,7 @@ app.put('/api/departments/:id/save', async (req, res) => {
 
         if (deleteCustomError) throw deleteCustomError;
 
+        // إضافة الفترات المخصصة الجديدة
         if (typeData.custom_slots && Array.isArray(typeData.custom_slots)) {
           for (const slot of typeData.custom_slots) {
             const { error: insertError } = await supabase
@@ -928,7 +903,6 @@ app.put('/api/departments/:id/save', async (req, res) => {
                 capacity: slot.capacity,
                 from_time: slot.from_time,
                 to_time: slot.to_time,
-                current_bookings: 0, // ✅ تهيئة بـ 0
                 created_at: new Date(),
                 updated_at: new Date()
               }]);
@@ -953,10 +927,15 @@ app.put('/api/departments/:id/save', async (req, res) => {
 
     if (fetchError) throw fetchError;
 
-    // ✅ استخدام current_bookings من الجدول
+    // ✅ حساب current_bookings لكل فترة
     const doctorTypesWithBookings = await Promise.all((updatedDepartment.doctor_types || []).map(async (dt) => {
       const slotsWithBookings = await Promise.all((dt.custom_slots || []).map(async (slot) => {
-        const currentBookings = slot.current_bookings || 0;
+        const { data: bookings, error: countError } = await supabase
+          .from('bookings')
+          .select('id', { count: 'exact', head: true })
+          .eq('custom_slot_id', slot.id);
+
+        const currentBookings = bookings?.length || 0;
 
         return {
           ...slot,
@@ -985,12 +964,12 @@ app.put('/api/departments/:id/save', async (req, res) => {
 });
 
 // ============================
-// 6. الحجوزات (Bookings) - مع نظام Capacity المحسن
+// 6. الحجوزات (Bookings) - مع نظام Capacity الديناميكي
 // ============================
 
 /**
  * POST /api/bookings
- * إنشاء حجز جديد مع تحديث current_bookings باستخدام RPC
+ * إنشاء حجز جديد مع تحديث current_bookings
  */
 app.post('/api/bookings', async (req, res) => {
   try {
@@ -1006,133 +985,17 @@ app.post('/api/bookings', async (req, res) => {
       patient_gender
     } = req.body;
 
-    // ✅ التحقق من جميع الحقول
-    if (!department_id || !doctor_type || !slot_id || !booking_date || 
-        !patient_name || !patient_age || !patient_phone || !patient_gender) {
+    // ✅ 1. التحقق من جميع الحقول
+    if (!department_id || !doctor_type || !slot_id || !booking_date || !patient_name || !patient_age || !patient_phone || !patient_gender) {
       return res.status(400).json({ error: 'جميع الحقول مطلوبة' });
     }
 
-    // ✅ التحقق من صحة الجنس
+    // ✅ 2. التحقق من صحة الجنس
     if (!['male', 'female'].includes(patient_gender)) {
       return res.status(400).json({ error: 'الجنس يجب أن يكون male أو female' });
     }
 
-    // ✅ استخدام RPC function للحجز الآمن
-    try {
-      const { data, error } = await supabase.rpc('create_booking_secure', {
-        p_department_id: department_id,
-        p_doctor_type: doctor_type,
-        p_slot_id: slot_id,
-        p_booking_date: booking_date,
-        p_booking_time: booking_time || null,
-        p_patient_name: patient_name,
-        p_patient_age: parseInt(patient_age),
-        p_patient_phone: patient_phone,
-        p_patient_gender: patient_gender
-      });
-
-      if (error) {
-        console.error('❌ RPC Error:', error);
-        
-        // ✅ التحقق من رسائل الخطأ المحددة
-        if (error.message.includes('رقم التليفون مستخدم')) {
-          return res.status(400).json({ 
-            error: 'رقم التليفون مستخدم بالفعل في حجز آخر',
-            code: 'DUPLICATE_PHONE'
-          });
-        }
-        
-        if (error.message.includes('الموعد مكتمل')) {
-          return res.status(400).json({ 
-            error: error.message,
-            code: 'SLOT_FULL'
-          });
-        }
-
-        return res.status(400).json({ 
-          error: error.message || 'حدث خطأ أثناء إنشاء الحجز'
-        });
-      }
-
-      if (!data || !data.success) {
-        return res.status(400).json({ 
-          error: data?.error || 'حدث خطأ أثناء إنشاء الحجز'
-        });
-      }
-
-      // ✅ جلب بيانات الحجز الكاملة
-      const { data: bookingData, error: fetchError } = await supabase
-        .from('bookings')
-        .select(`
-          *,
-          departments:department_id(id, name, icon_url),
-          doctor_types:doctor_type_id(id, type, label),
-          custom_slots:custom_slot_id(id, date, from_time, to_time, capacity, current_bookings)
-        `)
-        .eq('id', data.booking_id)
-        .single();
-
-      if (fetchError) {
-        console.error('❌ Fetch error:', fetchError);
-        return res.status(201).json({
-          ...data,
-          booking_id: data.booking_id,
-          message: 'تم إنشاء الحجز بنجاح، ولكن حدث خطأ في جلب البيانات'
-        });
-      }
-
-      res.status(201).json({
-        success: true,
-        message: 'تم إنشاء الحجز بنجاح',
-        booking: {
-          id: bookingData.id,
-          patient_name: bookingData.patient_name,
-          patient_age: bookingData.patient_age,
-          patient_phone: bookingData.patient_phone,
-          patient_gender: bookingData.patient_gender,
-          booking_date: bookingData.booking_date,
-          booking_time: bookingData.booking_time,
-          department: bookingData.departments,
-          doctor: bookingData.doctor_types,
-          slot: {
-            id: bookingData.custom_slots?.id,
-            date: bookingData.custom_slots?.date,
-            from_time: bookingData.custom_slots?.from_time,
-            to_time: bookingData.custom_slots?.to_time,
-            capacity: bookingData.custom_slots?.capacity,
-            current_bookings: bookingData.custom_slots?.current_bookings || 0,
-            remaining: (bookingData.custom_slots?.capacity || 0) - (bookingData.custom_slots?.current_bookings || 0)
-          }
-        }
-      });
-    } catch (rpcError) {
-      console.error('❌ RPC call failed:', rpcError);
-      
-      // ✅ Fallback: استخدام الطريقة التقليدية إذا فشلت RPC
-      return await createBookingFallback(req, res);
-    }
-  } catch (error) {
-    console.error('❌ Server error:', error);
-    res.status(500).json({ error: 'Server error: ' + error.message });
-  }
-});
-
-// ✅ Fallback function للحجز التقليدي
-async function createBookingFallback(req, res) {
-  try {
-    const {
-      department_id,
-      doctor_type,
-      slot_id,
-      booking_date,
-      booking_time,
-      patient_name,
-      patient_age,
-      patient_phone,
-      patient_gender
-    } = req.body;
-
-    // ✅ التحقق من عدم وجود رقم تليفون مكرر
+    // ✅ 3. التحقق من عدم وجود رقم تليفون مكرر
     const { data: existingPhone, error: phoneError } = await supabase
       .from('bookings')
       .select('id, patient_phone, patient_name')
@@ -1151,7 +1014,7 @@ async function createBookingFallback(req, res) {
       });
     }
 
-    // ✅ جلب doctor_type_id
+    // ✅ 4. جلب doctor_type_id
     const { data: doctorType, error: typeError } = await supabase
       .from('doctor_types')
       .select('id')
@@ -1163,10 +1026,10 @@ async function createBookingFallback(req, res) {
       return res.status(404).json({ error: 'نوع الطبيب غير موجود' });
     }
 
-    // ✅ جلب custom_slot مع capacity و current_bookings
+    // ✅ 5. جلب custom_slot مع capacity
     const { data: customSlot, error: customError } = await supabase
       .from('custom_slots')
-      .select('id, capacity, from_time, to_time, current_bookings')
+      .select('id, capacity, from_time, to_time')
       .eq('id', slot_id)
       .eq('doctor_type_id', doctorType.id)
       .eq('date', booking_date)
@@ -1176,19 +1039,27 @@ async function createBookingFallback(req, res) {
       return res.status(404).json({ error: 'الموعد غير موجود' });
     }
 
-    const currentBookings = customSlot.current_bookings || 0;
+    // ✅ 6. حساب عدد الحجوزات الحالية
+    const { data: currentBookings, error: countError } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('custom_slot_id', slot_id);
 
-    // ✅ التحقق من السعة
-    if (currentBookings >= customSlot.capacity) {
+    if (countError) throw countError;
+
+    const currentCount = currentBookings?.length || 0;
+
+    // ✅ 7. التحقق من السعة
+    if (currentCount >= customSlot.capacity) {
       return res.status(400).json({ 
         error: 'الموعد مكتمل، لا توجد أماكن متاحة',
         capacity: customSlot.capacity,
-        current_bookings: currentBookings,
+        current_bookings: currentCount,
         remaining: 0
       });
     }
 
-    // ✅ إنشاء الحجز
+    // ✅ 8. إنشاء الحجز
     let finalBookingTime = booking_time;
     if (!finalBookingTime) {
       finalBookingTime = `${customSlot.from_time.substring(0, 5)} - ${customSlot.to_time.substring(0, 5)}`;
@@ -1216,30 +1087,27 @@ async function createBookingFallback(req, res) {
 
     if (bookingError) throw bookingError;
 
-    // ✅ تحديث current_bookings في custom_slots
-    const { error: updateError } = await supabase
-      .from('custom_slots')
-      .update({ 
-        current_bookings: currentBookings + 1,
-        updated_at: new Date()
-      })
-      .eq('id', slot_id);
+    // ✅ 9. حساب عدد الحجوزات الجديد
+    const { data: updatedBookings, error: newCountError } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('custom_slot_id', slot_id);
 
-    if (updateError) {
-      console.error('⚠️ Failed to update current_bookings:', updateError);
-    }
+    if (newCountError) throw newCountError;
+
+    const newCount = updatedBookings?.length || 0;
 
     res.status(201).json({
       ...booking,
       capacity: customSlot.capacity,
-      current_bookings: currentBookings + 1,
-      remaining: customSlot.capacity - (currentBookings + 1)
+      current_bookings: newCount,
+      remaining: customSlot.capacity - newCount
     });
   } catch (error) {
-    console.error('❌ Fallback error:', error);
+    console.error('❌ Server error:', error);
     res.status(500).json({ error: 'Server error: ' + error.message });
   }
-}
+});
 
 /**
  * GET /api/bookings/all
@@ -1266,8 +1134,7 @@ app.get('/api/bookings/all', async (req, res) => {
           date,
           from_time,
           to_time,
-          capacity,
-          current_bookings
+          capacity
         )
       `)
       .order('created_at', { ascending: false });
@@ -1277,11 +1144,24 @@ app.get('/api/bookings/all', async (req, res) => {
       return res.status(500).json({ error: error.message });
     }
 
-    // ✅ تنسيق البيانات مع current_bookings من الجدول
-    const formattedData = (data || []).map((booking) => {
-      const slot = booking.custom_slots || {};
-      const currentBookings = slot.current_bookings || 0;
-      const capacity = slot.capacity || 0;
+    // ✅ تنسيق البيانات مع current_bookings
+    const formattedData = await Promise.all((data || []).map(async (booking) => {
+      // حساب current_bookings لهذه الفترة
+      let currentBookings = 0;
+      if (booking.custom_slots?.id) {
+        const { data: bookings, error: countError } = await supabase
+          .from('bookings')
+          .select('id', { count: 'exact', head: true })
+          .eq('custom_slot_id', booking.custom_slots.id);
+        
+        if (!countError) {
+          currentBookings = bookings?.length || 0;
+        }
+      }
+
+      const slotFrom = booking.custom_slots?.from_time?.substring(0, 5) || null;
+      const slotTo = booking.custom_slots?.to_time?.substring(0, 5) || null;
+      const capacity = booking.custom_slots?.capacity || 0;
 
       return {
         id: booking.id,
@@ -1301,10 +1181,10 @@ app.get('/api/bookings/all', async (req, res) => {
           label: booking.doctor_types?.label || 'غير معروف'
         },
         slot: {
-          id: slot.id || null,
-          date: slot.date || null,
-          from_time: slot.from_time?.substring(0, 5) || null,
-          to_time: slot.to_time?.substring(0, 5) || null,
+          id: booking.custom_slots?.id || null,
+          date: booking.custom_slots?.date || null,
+          from_time: slotFrom,
+          to_time: slotTo,
           capacity: capacity,
           current_bookings: currentBookings,
           remaining: capacity - currentBookings
@@ -1312,7 +1192,7 @@ app.get('/api/bookings/all', async (req, res) => {
         created_at: booking.created_at,
         display: `${booking.patient_name} | ${booking.booking_date} | ${booking.departments?.name || 'غير معروف'} | ${booking.doctor_types?.label || 'غير معروف'}`
       };
-    });
+    }));
 
     res.json(formattedData);
   } catch (error) {
@@ -1346,8 +1226,7 @@ app.get('/api/admin/bookings', async (req, res) => {
           date,
           from_time,
           to_time,
-          capacity,
-          current_bookings
+          capacity
         )
       `)
       .order('created_at', { ascending: false });
@@ -1357,10 +1236,23 @@ app.get('/api/admin/bookings', async (req, res) => {
       return res.status(500).json({ error: error.message });
     }
 
-    const formattedData = (data || []).map((booking) => {
-      const slot = booking.custom_slots || {};
-      const currentBookings = slot.current_bookings || 0;
-      const capacity = slot.capacity || 0;
+    const formattedData = await Promise.all((data || []).map(async (booking) => {
+      // حساب current_bookings لهذه الفترة
+      let currentBookings = 0;
+      if (booking.custom_slots?.id) {
+        const { data: bookings, error: countError } = await supabase
+          .from('bookings')
+          .select('id', { count: 'exact', head: true })
+          .eq('custom_slot_id', booking.custom_slots.id);
+        
+        if (!countError) {
+          currentBookings = bookings?.length || 0;
+        }
+      }
+
+      const slotFrom = booking.custom_slots?.from_time?.substring(0, 5) || null;
+      const slotTo = booking.custom_slots?.to_time?.substring(0, 5) || null;
+      const capacity = booking.custom_slots?.capacity || 0;
 
       return {
         patient: {
@@ -1374,10 +1266,9 @@ app.get('/api/admin/bookings', async (req, res) => {
           id: booking.id,
           date: booking.booking_date,
           booking_time: booking.booking_time,
-          slot_range: slot.from_time && slot.to_time ? 
-            `${slot.from_time.substring(0, 5)} - ${slot.to_time.substring(0, 5)}` : null,
-          slot_from: slot.from_time?.substring(0, 5) || null,
-          slot_to: slot.to_time?.substring(0, 5) || null,
+          slot_range: slotFrom && slotTo ? `${slotFrom} - ${slotTo}` : null,
+          slot_from: slotFrom,
+          slot_to: slotTo,
           capacity: capacity,
           current_bookings: currentBookings,
           remaining: capacity - currentBookings,
@@ -1394,9 +1285,9 @@ app.get('/api/admin/bookings', async (req, res) => {
           label: booking.doctor_types?.label || 'غير معروف'
         },
         created_at: booking.created_at,
-        display: `${booking.patient_name} | ${booking.booking_date} | ${booking.departments?.name || 'غير معروف'} | ${booking.doctor_types?.label || 'غير معروف'} | ${slot.from_time?.substring(0, 5) || ''} - ${slot.to_time?.substring(0, 5) || ''} | ${currentBookings}/${capacity}`
+        display: `${booking.patient_name} | ${booking.booking_date} | ${booking.departments?.name || 'غير معروف'} | ${booking.doctor_types?.label || 'غير معروف'} | ${slotFrom || ''} - ${slotTo || ''} | ${currentBookings}/${capacity}`
       };
-    });
+    }));
 
     res.json(formattedData);
   } catch (error) {
@@ -1432,8 +1323,7 @@ app.get('/api/bookings/department/:departmentId', async (req, res) => {
           date,
           from_time,
           to_time,
-          capacity,
-          current_bookings
+          capacity
         )
       `)
       .eq('department_id', departmentId)
@@ -1444,10 +1334,22 @@ app.get('/api/bookings/department/:departmentId', async (req, res) => {
       return res.status(500).json({ error: error.message });
     }
 
-    const formattedData = (data || []).map((booking) => {
-      const slot = booking.custom_slots || {};
-      const currentBookings = slot.current_bookings || 0;
-      const capacity = slot.capacity || 0;
+    const formattedData = await Promise.all((data || []).map(async (booking) => {
+      let currentBookings = 0;
+      if (booking.custom_slots?.id) {
+        const { data: bookings, error: countError } = await supabase
+          .from('bookings')
+          .select('id', { count: 'exact', head: true })
+          .eq('custom_slot_id', booking.custom_slots.id);
+        
+        if (!countError) {
+          currentBookings = bookings?.length || 0;
+        }
+      }
+
+      const slotFrom = booking.custom_slots?.from_time?.substring(0, 5) || null;
+      const slotTo = booking.custom_slots?.to_time?.substring(0, 5) || null;
+      const capacity = booking.custom_slots?.capacity || 0;
 
       return {
         id: booking.id,
@@ -1467,17 +1369,17 @@ app.get('/api/bookings/department/:departmentId', async (req, res) => {
           label: booking.doctor_types?.label || 'غير معروف'
         },
         slot: {
-          id: slot.id || null,
-          from_time: slot.from_time?.substring(0, 5) || null,
-          to_time: slot.to_time?.substring(0, 5) || null,
+          id: booking.custom_slots?.id || null,
+          from_time: slotFrom,
+          to_time: slotTo,
           capacity: capacity,
           current_bookings: currentBookings,
           remaining: capacity - currentBookings
         },
         created_at: booking.created_at,
-        summary: `حجز ${booking.patient_name} في ${booking.booking_date} الفترة ${booking.booking_time || (slot.from_time ? slot.from_time.substring(0, 5) + ' - ' + slot.to_time?.substring(0, 5) : '')} (${currentBookings}/${capacity})`
+        summary: `حجز ${booking.patient_name} في ${booking.booking_date} الفترة ${booking.booking_time || slotFrom + ' - ' + slotTo} (${currentBookings}/${capacity})`
       };
-    });
+    }));
 
     res.json(formattedData);
   } catch (error) {
@@ -1495,7 +1397,7 @@ app.delete('/api/bookings/:id', async (req, res) => {
     const { id } = req.params;
     console.log('📡 DELETE /api/bookings/:id', id);
 
-    // ✅ جلب الحجز قبل الحذف
+    // ✅ 1. جلب الحجز قبل الحذف
     const { data: booking, error: fetchError } = await supabase
       .from('bookings')
       .select('custom_slot_id')
@@ -1509,10 +1411,10 @@ app.delete('/api/bookings/:id', async (req, res) => {
 
     console.log('✅ Booking found, custom_slot_id:', booking.custom_slot_id);
 
-    // ✅ جلب الـ custom_slot الحالي
+    // ✅ 2. جلب الـ custom_slot الحالي
     const { data: customSlot, error: slotError } = await supabase
       .from('custom_slots')
-      .select('id, capacity, current_bookings')
+      .select('id, capacity')
       .eq('id', booking.custom_slot_id)
       .single();
 
@@ -1521,7 +1423,7 @@ app.delete('/api/bookings/:id', async (req, res) => {
       return res.status(404).json({ error: 'الموعد غير موجود' });
     }
 
-    // ✅ حذف الحجز
+    // ✅ 3. حذف الحجز
     const { error: deleteError } = await supabase
       .from('bookings')
       .delete()
@@ -1534,23 +1436,19 @@ app.delete('/api/bookings/:id', async (req, res) => {
 
     console.log('✅ Booking deleted');
 
-    // ✅ تحديث current_bookings في custom_slots
-    const newCurrentBookings = Math.max(0, (customSlot.current_bookings || 1) - 1);
-    
-    const { error: updateError } = await supabase
-      .from('custom_slots')
-      .update({ 
-        current_bookings: newCurrentBookings,
-        updated_at: new Date()
-      })
-      .eq('id', customSlot.id);
+    // ✅ 4. حساب عدد الحجوزات المتبقية
+    const { data: remainingBookings, error: countError } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('custom_slot_id', customSlot.id);
 
-    if (updateError) {
-      console.error('❌ Update error:', updateError);
-      throw updateError;
+    if (countError) {
+      console.error('❌ Count error:', countError);
+      throw countError;
     }
 
-    console.log('✅ Updated current_bookings to:', newCurrentBookings);
+    const newCurrentBookings = remainingBookings?.length || 0;
+    console.log('New current_bookings from count:', newCurrentBookings);
 
     res.json({
       message: 'تم إلغاء الحجز وتحديث السعة بنجاح',
@@ -1574,7 +1472,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Supabase: ${supabaseUrl ? '✅ Connected' : '❌ Not connected'}`);
   console.log(`🔐 JWT: ${jwtSecret ? '✅ Configured' : '❌ Missing'}`);
-  console.log(`📦 Version: 3.1.0 (مع نظام Capacity المحسن باستخدام current_bookings)`);
+  console.log(`📦 Version: 3.0.0 (مع نظام Capacity الديناميكي النهائي)`);
 });
 
 module.exports = app;
